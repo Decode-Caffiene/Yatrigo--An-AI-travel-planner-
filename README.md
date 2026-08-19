@@ -36,7 +36,6 @@ open in ten tabs into one place:
 ## Who it's for
 
 Independent travelers and small groups who want an AI-generated starting
-itinerary they can trust  and don't want to re-research the same trip logistics across five
+itinerary they can trust (because it's grounded and validated, not freeform
+LLM output) and don't want to re-research the same trip logistics across five
 different sites once they have it.
-
-
