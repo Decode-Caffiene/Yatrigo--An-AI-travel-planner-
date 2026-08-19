@@ -7,7 +7,9 @@ import { useSearchParams } from "next/navigation";
 
 import { resetPassword, ApiError } from "@/lib/api";
 import { BackgroundCarousel } from "@/components/BackgroundCarousel";
+import { PasswordStrengthMeter } from "@/components/PasswordStrengthMeter";
 import { usePageEntrance } from "@/lib/usePageEntrance";
+import { isValidPassword, PASSWORD_ERROR_MESSAGE } from "@/lib/validators";
 
 function ResetPasswordCard() {
   const searchParams = useSearchParams();
@@ -25,6 +27,11 @@ function ResetPasswordCard() {
 
     if (!token) {
       setError("This reset link is invalid. Request a new one.");
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      setError(PASSWORD_ERROR_MESSAGE);
       return;
     }
 
@@ -89,12 +96,18 @@ function ResetPasswordCard() {
             <input
               type="password"
               required
-              minLength={6}
-              placeholder="At least 6 characters"
+              minLength={8}
+              pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}"
+              title="At least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character"
+              placeholder="At least 8 characters"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border-0 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-lime-400"
             />
+            <p className="mt-1 text-xs text-white/60">
+              Must include an uppercase letter, a lowercase letter, a number, and a special character.
+            </p>
+            <PasswordStrengthMeter password={password} />
           </div>
 
           <div>
@@ -104,7 +117,7 @@ function ResetPasswordCard() {
             <input
               type="password"
               required
-              minLength={6}
+              minLength={8}
               placeholder="Re-enter your new password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

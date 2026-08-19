@@ -20,6 +20,15 @@ export const updateProfile = asyncHandler(async (req, res) => {
   });
 });
 
+export const searchUsers = asyncHandler(async (req, res) => {
+  const users = await userService.searchUsers(req.query.query, req.user._id);
+
+  res.status(200).json({
+    success: true,
+    users,
+  });
+});
+
 export const toggleFollow = asyncHandler(async (req, res) => {
   const result = await userService.toggleFollow(req.params.id, req.user._id);
 

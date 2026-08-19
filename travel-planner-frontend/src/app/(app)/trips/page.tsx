@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 
 import { useAuth } from "@/lib/auth-context";
@@ -9,6 +8,7 @@ import { useRequireAuth } from "@/lib/use-require-auth";
 import { usePageEntrance } from "@/lib/usePageEntrance";
 import { listTrips, ApiError } from "@/lib/api";
 import { DestinationImage } from "@/components/DestinationImage";
+import { downloadItinerary } from "@/lib/exportItinerary";
 import type { Trip, TripStatus } from "@/types";
 
 const STATUS_META: Record<TripStatus, { label: string; icon: string }> = {
@@ -24,33 +24,11 @@ const STATUS_FILTERS: { value: TripStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-const AI_SUGGESTIONS = [
-  {
-    city: "Seoul, South Korea",
-    tag: "K-pop + Food",
-    imageUrl:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuA_NrK_jcNgdrmf_gDVXm2Hal_VAWxsJ2CdvOqVx8t-rz2d_z2ApEajbALMMapzMMjGKaxMUY1IYT4pk2MqRhPbdshkDpTy0RhXmJa19ADJuwwewbvTHhLIdOeJpOUpbX-qhuP_9AYOkx6IQ-UNuW07Joc_HyJ8MUlHNP4vm_wg6dbrUELy7NlDbLdaf4rT1LxgccCIpASwpIPGH6V_ewojQQdY2vHiN1TRg2IV-rHns-5wQtS7E9oz8Q",
-  },
-  {
-    city: "Taiwan",
-    tag: "Night Markets",
-    imageUrl:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuBwWYaxptdGeOgfvI1_wmIHr9GlWuJDnZj3dwl963WieFcdNnS9dnROqmcQB5j6eQwIbIljKT0_X3uWjdQFJT0vn-78SMaAX5CwONGe2hUi9eJiNCJ-MJ8Plcsyie0i35S8k7PF4VRN5jWGWdYpGFb8ca7lA3DeWclJP7Jyo-shtv98vEkNEK1kbiaO9NsG8EoLyI9WjX-r2n267oI-eGTDL9PVtTI8yhQSrXuxZqjPq95tCQLb0GwnTA",
-  },
-  {
-    city: "Vietnam",
-    tag: "Street Food",
-    imageUrl:
-      "https://lh3.googleusercontent.com/aida-public/AB6AXuAhEHEqLTHdU9bVY-qIv6KZdQG7qZcdIkkKl7zCBni0fWFTCIBPXMlztcn7gTRPL4vSbnIRqVl86sH080os4sEysMLs6_1KMArA8FEO1Bqc7gZhmdg-zQU0b7MDddG-HHY7M7I76ozcgSK-1YcE1FgOrEJw0zzBnD-htly8rrO2Aj_KdPCDRTfNuBUuvYAvCuhzBFtfVTp4kuw1YzoEZc9dhcGRyIzJlPTbdx8Nhk7AJv_UcH_DUgb4gg",
-  },
-];
+const quickActionClass =
+  "flex flex-col items-center justify-center gap-2 rounded-lg bg-surface-container p-4 text-center transition-colors hover:bg-surface-container-high";
 
-const QUICK_ACTIONS = [
-  { label: "Create Trip", icon: "add_location", href: "/trips/new" },
-  { label: "Export Itinerary", icon: "ios_share", stub: true },
-  { label: "Regenerate AI Plan", icon: "refresh", stub: true },
-  { label: "Browse Destinations", icon: "travel_explore", href: "/explore" },
-];
+const quickActionDisabledClass =
+  "flex cursor-not-allowed flex-col items-center justify-center gap-2 rounded-lg bg-surface-container p-4 text-center opacity-60";
 
 function formatDate(dateString: string) {
   return new Date(dateString).toLocaleDateString(undefined, {
@@ -117,6 +95,11 @@ export default function TripsPage() {
     [upcomingTrips]
   );
 
+  const latestTripWithItinerary = useMemo(
+    () => recentTrips.find((trip) => trip.itinerary),
+    [recentTrips]
+  );
+
   const stats = useMemo(
     () => ({
       total: trips.length,
@@ -125,11 +108,6 @@ export default function TripsPage() {
       countries: new Set(trips.map((trip) => trip.destination)).size,
     }),
     [trips, upcomingTrips]
-  );
-
-  const lastCompletedDestination = useMemo(
-    () => trips.find((trip) => trip.status === "completed")?.destination,
-    [trips]
   );
 
   const firstName = user?.name.split(" ")[0] ?? "there";
@@ -454,50 +432,6 @@ export default function TripsPage() {
             )}
           </div>
 
-          {/* AI Suggestions */}
-          <div
-            data-animate
-            className="card-shadow relative overflow-hidden rounded-xl border border-surface-variant bg-surface-container-lowest p-6"
-          >
-            <div className="absolute top-0 right-0 -mt-10 -mr-10 h-32 w-32 rounded-full bg-secondary-fixed-dim/20 blur-2xl" />
-            <h3 className="relative z-10 mb-1 flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
-              AI Suggestions
-              <span className="material-symbols-outlined text-secondary-container">
-                auto_awesome
-              </span>
-            </h3>
-            <p className="relative z-10 mb-4 font-body-sm text-body-sm text-on-surface-variant">
-              {lastCompletedDestination
-                ? `Because you enjoyed ${lastCompletedDestination}...`
-                : "Curated picks to get you started..."}
-            </p>
-            <div className="relative z-10 space-y-3">
-              {AI_SUGGESTIONS.map((suggestion) => (
-                <Link
-                  key={suggestion.city}
-                  href={`/trips/new?destination=${encodeURIComponent(suggestion.city)}`}
-                  className="group relative block h-24 cursor-pointer overflow-hidden rounded-lg"
-                >
-                  <Image
-                    src={suggestion.imageUrl}
-                    alt={suggestion.city}
-                    fill
-                    className="object-cover transition-transform duration-500 group-hover:scale-110"
-                  />
-                  <div className="absolute inset-0 bg-black/50 transition-colors group-hover:bg-black/40" />
-                  <div className="absolute inset-0 flex flex-col justify-end p-3">
-                    <h4 className="font-button text-button text-on-primary">
-                      {suggestion.city}
-                    </h4>
-                    <p className="font-label-caps text-label-caps text-on-primary/80">
-                      {suggestion.tag}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-
           {/* Quick actions */}
           <div
             data-animate
@@ -507,36 +441,88 @@ export default function TripsPage() {
               Quick Actions
             </h3>
             <div className="grid grid-cols-2 gap-3">
-              {QUICK_ACTIONS.map((action) =>
-                action.stub ? (
-                  <button
-                    key={action.label}
-                    type="button"
-                    title="Coming soon"
-                    className="flex cursor-not-allowed flex-col items-center justify-center gap-2 rounded-lg bg-surface-container p-4 text-center opacity-60"
-                  >
-                    <span className="material-symbols-outlined text-primary">
-                      {action.icon}
-                    </span>
-                    <span className="font-body-sm text-body-sm font-medium">
-                      {action.label}
-                    </span>
-                  </button>
-                ) : (
-                  <Link
-                    key={action.label}
-                    href={action.href!}
-                    className="flex flex-col items-center justify-center gap-2 rounded-lg bg-surface-container p-4 text-center transition-colors hover:bg-surface-container-high"
-                  >
-                    <span className="material-symbols-outlined text-primary">
-                      {action.icon}
-                    </span>
-                    <span className="font-body-sm text-body-sm font-medium">
-                      {action.label}
-                    </span>
-                  </Link>
-                )
+              <Link
+                href="/trips/new"
+                className={quickActionClass}
+              >
+                <span className="material-symbols-outlined text-primary">
+                  add_location
+                </span>
+                <span className="font-body-sm text-body-sm font-medium text-on-surface">
+                  Create Trip
+                </span>
+              </Link>
+
+              {latestTripWithItinerary ? (
+                <button
+                  type="button"
+                  onClick={() => downloadItinerary(latestTripWithItinerary)}
+                  title={`Download the itinerary for ${latestTripWithItinerary.destination}`}
+                  className={quickActionClass}
+                >
+                  <span className="material-symbols-outlined text-primary">
+                    ios_share
+                  </span>
+                  <span className="font-body-sm text-body-sm font-medium text-on-surface">
+                    Export Itinerary
+                  </span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  title="Generate an itinerary for a trip first"
+                  className={quickActionDisabledClass}
+                >
+                  <span className="material-symbols-outlined text-primary">
+                    ios_share
+                  </span>
+                  <span className="font-body-sm text-body-sm font-medium text-on-surface">
+                    Export Itinerary
+                  </span>
+                </button>
               )}
+
+              {latestTripWithItinerary ? (
+                <Link
+                  href={`/trips/${latestTripWithItinerary._id}?tab=itinerary&autogenerate=1`}
+                  title={`Regenerate the itinerary for ${latestTripWithItinerary.destination}`}
+                  className={quickActionClass}
+                >
+                  <span className="material-symbols-outlined text-primary">
+                    refresh
+                  </span>
+                  <span className="font-body-sm text-body-sm font-medium text-on-surface">
+                    Regenerate AI Plan
+                  </span>
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  title="No itinerary to regenerate yet"
+                  className={quickActionDisabledClass}
+                >
+                  <span className="material-symbols-outlined text-primary">
+                    refresh
+                  </span>
+                  <span className="font-body-sm text-body-sm font-medium text-on-surface">
+                    Regenerate AI Plan
+                  </span>
+                </button>
+              )}
+
+              <Link
+                href="/explore"
+                className={quickActionClass}
+              >
+                <span className="material-symbols-outlined text-primary">
+                  travel_explore
+                </span>
+                <span className="font-body-sm text-body-sm font-medium text-on-surface">
+                  Browse Destinations
+                </span>
+              </Link>
             </div>
           </div>
         </aside>

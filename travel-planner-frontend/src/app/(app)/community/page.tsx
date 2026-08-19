@@ -10,9 +10,9 @@ import { usePageEntrance } from "@/lib/usePageEntrance";
 import { PostCard } from "@/components/community/PostCard";
 import {
   ApiError,
-  getAIEvents,
   getTopTravelers,
   getTrendingDestinations,
+  getUpcomingEvents,
   listPosts,
 } from "@/lib/api";
 import type { Post, TopTraveler, TravelEvent, TrendingDestination } from "@/types";
@@ -27,6 +27,8 @@ const FILTERS: { key: string; label: string }[] = [
   { key: "saved", label: "Saved" },
 ];
 
+const EVENTS_PAGE_SIZE = 3;
+
 export default function CommunityPage() {
   const { isReady } = useRequireAuth();
   const { token, user } = useAuth();
@@ -35,11 +37,14 @@ export default function CommunityPage() {
   const [posts, setPosts] = useState<Post[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
 
   const [trending, setTrending] = useState<TrendingDestination[]>([]);
   const [topTravelers, setTopTravelers] = useState<TopTraveler[]>([]);
   const [events, setEvents] = useState<TravelEvent[]>([]);
   const [isEventsLoading, setIsEventsLoading] = useState(false);
+  const [visibleEventsCount, setVisibleEventsCount] = useState(EVENTS_PAGE_SIZE);
 
   const scope = usePageEntrance<HTMLDivElement>([isLoading]);
 
@@ -60,12 +65,37 @@ export default function CommunityPage() {
           : { type: filter };
 
     listPosts(token, filters)
-      .then((res) => setPosts(res.posts))
+      .then((res) => {
+        setPosts(res.posts);
+        setHasMore(res.hasMore);
+      })
       .catch((err) =>
         setError(err instanceof ApiError ? err.message : "Failed to load the feed.")
       )
       .finally(() => setIsLoading(false));
   }, [isReady, token, filter]);
+
+  const handleLoadMore = () => {
+    if (!token || isLoadingMore || posts.length === 0) return;
+
+    const filters =
+      filter === "following"
+        ? { following: true }
+        : filter === "saved"
+          ? { saved: true }
+          : { type: filter };
+
+    setIsLoadingMore(true);
+    listPosts(token, { ...filters, before: posts[posts.length - 1].createdAt })
+      .then((res) => {
+        setPosts((current) => [...current, ...res.posts]);
+        setHasMore(res.hasMore);
+      })
+      .catch((err) =>
+        setError(err instanceof ApiError ? err.message : "Failed to load more posts.")
+      )
+      .finally(() => setIsLoadingMore(false));
+  };
 
   useEffect(() => {
     if (!isReady || !token) return;
@@ -79,21 +109,26 @@ export default function CommunityPage() {
       .catch(() => setTopTravelers([]));
   }, [isReady, token]);
 
-  // AI-generated upcoming events for the top trending destination (via the
-  // same Groq model used for itinerary generation) — degrades to an empty
-  // state if generation fails for any reason.
+  // AI-generated upcoming events spanning many countries (via the same Groq
+  // model used for itinerary generation), sorted chronologically by the
+  // model's own date estimates — degrades to an empty state if generation
+  // fails for any reason. Independent of the trending-destinations list.
   useEffect(() => {
-    if (!isReady || !token || trending.length === 0) return;
+    if (!isReady || !token) return;
 
-    // Kicking off a fetch when the trending destination becomes known —
-    // setIsEventsLoading(true) runs synchronously, the rest resolves async.
+    // Kicking off a fetch on mount — setIsEventsLoading(true) runs
+    // synchronously, the rest resolves async via the fetch promise.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setIsEventsLoading(true);
-    getAIEvents(token, trending[0].destination)
-      .then((res) => setEvents(res.events.slice(0, 3)))
+    getUpcomingEvents(token)
+      .then((res) => setEvents(res.events))
       .catch(() => setEvents([]))
       .finally(() => setIsEventsLoading(false));
-  }, [isReady, token, trending]);
+  }, [isReady, token]);
+
+  const handleLoadMoreEvents = () => {
+    setVisibleEventsCount((count) => count + EVENTS_PAGE_SIZE);
+  };
 
   const handlePostUpdate = (updated: Post) => {
     setPosts((prev) => prev.map((p) => (p._id === updated._id ? updated : p)));
@@ -180,6 +215,17 @@ export default function CommunityPage() {
             {posts.map((post) => (
               <PostCard key={post._id} post={post} onUpdate={handlePostUpdate} />
             ))}
+
+            {!isLoading && hasMore && (
+              <button
+                type="button"
+                onClick={handleLoadMore}
+                disabled={isLoadingMore}
+                className="mx-auto rounded-full border border-surface-variant px-6 py-2.5 font-button text-button text-on-surface transition-colors hover:bg-surface-container disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isLoadingMore ? "Loading..." : "Load more"}
+              </button>
+            )}
           </section>
         </div>
 
@@ -195,7 +241,7 @@ export default function CommunityPage() {
             </h3>
             {trending.length === 0 ? (
               <p className="font-body-sm text-body-sm text-on-surface-variant">
-                Not enough activity yet this week.
+                Could not load trending destinations right now.
               </p>
             ) : (
               <div className="flex flex-wrap gap-2">
@@ -205,8 +251,10 @@ export default function CommunityPage() {
                     href={`/trips/new?destination=${encodeURIComponent(t.destination)}`}
                     className="rounded-full border border-outline-variant px-4 py-2 font-body-sm text-body-sm text-on-surface transition-colors hover:border-primary hover:text-primary"
                   >
-                    {t.destination}{" "}
-                    <span className="text-on-surface-variant">· {t.count}</span>
+                    {t.destination}
+                    {t.reason && (
+                      <span className="text-on-surface-variant"> · {t.reason}</span>
+                    )}
                   </Link>
                 ))}
               </div>
@@ -268,13 +316,9 @@ export default function CommunityPage() {
             data-animate
             className="card-shadow rounded-xl border border-surface-variant bg-surface p-6"
           >
-            <h3 className="mb-1 flex items-center gap-2 font-headline-sm text-headline-sm text-on-surface">
+            <h3 className="mb-4 flex items-center gap-2 font-headline-sm text-headline-sm text-on-surface">
               <span>📅</span> Upcoming Events
             </h3>
-            <p className="mb-4 flex items-center gap-1 font-label-caps text-label-caps text-on-surface-variant">
-              <span className="material-symbols-outlined text-sm">auto_awesome</span>
-              AI-generated, not verified real-time listings
-            </p>
             {isEventsLoading ? (
               <p className="font-body-sm text-body-sm text-on-surface-variant">
                 Generating events...
@@ -284,116 +328,110 @@ export default function CommunityPage() {
                 No upcoming events found right now.
               </p>
             ) : (
-              <ul className="flex flex-col gap-3">
-                {events.map((event) => (
-                  <li key={event.name}>
-                    <Link
-                      href={`/trips/new?destination=${encodeURIComponent(event.venue || trending[0]?.destination || "")}`}
-                      className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-surface-bright"
-                    >
-                      <div className="flex min-w-12 flex-col items-center justify-center rounded bg-primary-container p-2 text-on-primary-container">
-                        <span className="font-label-caps text-label-caps uppercase">
-                          {event.date
-                            ? new Date(event.date).toLocaleDateString(undefined, {
-                                month: "short",
-                              })
-                            : "TBD"}
-                        </span>
-                        <span className="font-button text-button">
-                          {event.date ? new Date(event.date).getDate() : "?"}
-                        </span>
-                      </div>
-                      <div>
-                        <p className="font-button text-button text-on-surface">
-                          {event.name}
-                        </p>
-                        <p className="font-body-sm text-body-sm text-on-surface-variant">
-                          {event.venue || trending[0]?.destination}
-                        </p>
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="flex flex-col gap-3">
+                  {events.slice(0, visibleEventsCount).map((event) => {
+                    const place = [event.venue, event.country]
+                      .filter(Boolean)
+                      .join(", ");
+
+                    const eventParams = new URLSearchParams();
+                    if (event.venue) eventParams.set("venue", event.venue);
+                    if (event.country) eventParams.set("country", event.country);
+                    if (event.date) eventParams.set("date", event.date);
+                    if (event.time) eventParams.set("time", event.time);
+                    if (event.category) eventParams.set("category", event.category);
+
+                    return (
+                      <li key={`${event.name}-${event.date}`}>
+                        <Link
+                          href={`/events/${encodeURIComponent(event.name)}?${eventParams.toString()}`}
+                          className="flex items-start gap-3 rounded-lg p-2 transition-colors hover:bg-surface-bright"
+                        >
+                          <div className="flex min-w-12 flex-col items-center justify-center rounded bg-primary-container p-2 text-on-primary-container">
+                            <span className="font-label-caps text-label-caps uppercase">
+                              {event.date
+                                ? new Date(event.date).toLocaleDateString(undefined, {
+                                    month: "short",
+                                  })
+                                : "TBD"}
+                            </span>
+                            <span className="font-button text-button">
+                              {event.date ? new Date(event.date).getDate() : "?"}
+                            </span>
+                          </div>
+                          <div>
+                            <p className="font-button text-button text-on-surface">
+                              {event.name}
+                            </p>
+                            <p className="font-body-sm text-body-sm text-on-surface-variant">
+                              {place || "Location TBD"}
+                            </p>
+                          </div>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {visibleEventsCount < events.length && (
+                  <button
+                    type="button"
+                    onClick={handleLoadMoreEvents}
+                    className="mt-3 w-full rounded-lg border border-surface-variant py-2 font-button text-button text-on-surface transition-colors hover:bg-surface-container"
+                  >
+                    Load more
+                  </button>
+                )}
+              </>
             )}
           </div>
         </aside>
       </div>
 
       {/* Footer */}
-      <footer className="mt-12 border-t border-surface-variant bg-surface px-0 py-12">
-        <div className="mx-auto grid max-w-360 grid-cols-1 gap-8 md:grid-cols-4">
-          <div className="col-span-1 md:col-span-1">
-            <div className="mb-4 flex items-center gap-2">
+      <footer className="-mx-container-padding-mobile mt-16 border-t border-surface-variant bg-surface-container-low md:-mx-container-padding-desktop">
+        <div className="mx-auto max-w-360 px-container-padding-mobile py-10 md:px-container-padding-desktop">
+          <div className="flex flex-col items-center gap-6 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-col items-center gap-3 md:items-start">
               <Image
                 src="/yatrigo-wordmark.png"
                 alt="Yatrigo"
                 width={478}
                 height={162}
-                className="h-6 w-auto opacity-80"
+                className="h-7 w-auto"
               />
+              <p className="max-w-xs text-center font-body-sm text-body-sm text-on-surface-variant md:text-left">
+                Empowering global explorers with AI-driven itineraries and a
+                vibrant community.
+              </p>
             </div>
-            <p className="font-body-sm text-body-sm text-on-surface-variant">
-              Empowering global explorers with AI-driven itineraries and a vibrant
-              community.
-            </p>
+
+            <nav className="flex items-center gap-6 md:gap-8">
+              <Link
+                href="/explore"
+                className="font-button text-button text-on-surface-variant transition-colors hover:text-primary"
+              >
+                Destinations
+              </Link>
+              <Link
+                href="/trips"
+                className="font-button text-button text-on-surface-variant transition-colors hover:text-primary"
+              >
+                Trips
+              </Link>
+              <Link
+                href="/community"
+                className="font-button text-button text-on-surface-variant transition-colors hover:text-primary"
+              >
+                Community
+              </Link>
+            </nav>
           </div>
-          <div>
-            <h4 className="mb-4 font-button text-button text-on-surface">Explore</h4>
-            <ul className="flex flex-col gap-2 font-body-sm text-body-sm text-on-surface-variant">
-              <li>
-                <Link href="/explore" className="transition-colors hover:text-primary">
-                  Destinations
-                </Link>
-              </li>
-              <li>
-                <Link href="/trips" className="transition-colors hover:text-primary">
-                  Trips
-                </Link>
-              </li>
-              <li>
-                <Link
-                  href="/community"
-                  className="transition-colors hover:text-primary"
-                >
-                  Community
-                </Link>
-              </li>
-            </ul>
+
+          <div className="mt-8 border-t border-surface-variant pt-6 text-center font-body-sm text-body-sm text-on-surface-variant">
+            © {new Date().getFullYear()} Yatrigo. All rights reserved.
           </div>
-          <div>
-            <h4 className="mb-4 font-button text-button text-on-surface">Support</h4>
-            <ul className="flex flex-col gap-2 font-body-sm text-body-sm text-on-surface-variant">
-              <li>
-                <span className="cursor-not-allowed opacity-60">Help Center</span>
-              </li>
-              <li>
-                <span className="cursor-not-allowed opacity-60">Safety</span>
-              </li>
-              <li>
-                <span className="cursor-not-allowed opacity-60">
-                  Cancellation Options
-                </span>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="mb-4 font-button text-button text-on-surface">Legal</h4>
-            <ul className="flex flex-col gap-2 font-body-sm text-body-sm text-on-surface-variant">
-              <li>
-                <span className="cursor-not-allowed opacity-60">Terms of Service</span>
-              </li>
-              <li>
-                <span className="cursor-not-allowed opacity-60">Privacy Policy</span>
-              </li>
-              <li>
-                <span className="cursor-not-allowed opacity-60">Cookie Policy</span>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div className="mx-auto mt-8 max-w-360 border-t border-surface-variant pt-8 text-center font-body-sm text-body-sm text-on-surface-variant">
-          © {new Date().getFullYear()} Yatrigo. All rights reserved.
         </div>
       </footer>
     </div>

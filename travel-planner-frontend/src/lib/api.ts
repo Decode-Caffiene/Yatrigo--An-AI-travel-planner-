@@ -1,7 +1,12 @@
 import type {
   AISuggestion,
+  AppNotification,
+  ChatMessage,
+  ChatUser,
   Comment,
+  Conversation,
   DestinationGuide,
+  EventDetails,
   GenerateItineraryResult,
   AirportSuggestion,
   HotelSearchResult,
@@ -19,6 +24,7 @@ import type {
 import type { DestinationSuggestion } from "@/lib/destinations";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api";
+export const SOCKET_URL = API_URL.replace(/\/api\/?$/, "");
 
 export class ApiError extends Error {
   status: number;
@@ -131,7 +137,7 @@ export const updateTrip = (
   input: Partial<
     NewTripInput & {
       hotel: Trip["hotel"];
-      flight: Trip["flight"];
+      flights: Trip["flights"];
       status: Trip["status"];
     }
   >
@@ -211,6 +217,7 @@ export interface ListPostsFilters {
   following?: boolean;
   saved?: boolean;
   author?: string;
+  before?: string;
 }
 
 export const listPosts = (token: string, filters: ListPostsFilters = {}) => {
@@ -219,9 +226,10 @@ export const listPosts = (token: string, filters: ListPostsFilters = {}) => {
   if (filters.following) params.set("following", "true");
   if (filters.saved) params.set("saved", "true");
   if (filters.author) params.set("author", filters.author);
+  if (filters.before) params.set("before", filters.before);
 
   const query = params.toString();
-  return request<{ count: number; posts: Post[] }>(
+  return request<{ count: number; posts: Post[]; hasMore: boolean }>(
     `/community/posts${query ? `?${query}` : ""}`,
     { token }
   );
@@ -320,6 +328,17 @@ export const getAIEvents = (token: string, destination: string) =>
     { token }
   );
 
+export const getUpcomingEvents = (token: string) =>
+  request<{ events: TravelEvent[] }>("/events/upcoming", { token });
+
+export const getEventDetails = (token: string, name: string, context?: string) =>
+  request<{ event: EventDetails }>(
+    `/events/details?name=${encodeURIComponent(name)}${
+      context ? `&context=${encodeURIComponent(context)}` : ""
+    }`,
+    { token }
+  );
+
 export const getDestinationGuide = (token: string, destination: string) =>
   request<{ guide: DestinationGuide }>(
     `/destinations/guide?destination=${encodeURIComponent(destination)}`,
@@ -347,3 +366,57 @@ export const searchPlaces = (token: string, query: string) =>
     `/maps/search?query=${encodeURIComponent(query)}`,
     { token }
   );
+
+export const searchUsers = (token: string, query: string) =>
+  request<{ users: ChatUser[] }>(
+    `/users/search?query=${encodeURIComponent(query)}`,
+    { token }
+  );
+
+export const listConversations = (token: string) =>
+  request<{ conversations: Conversation[] }>("/messages/conversations", { token });
+
+export const startConversation = (token: string, userId: string) =>
+  request<{ conversation: Conversation }>("/messages/conversations", {
+    method: "POST",
+    token,
+    body: JSON.stringify({ userId }),
+  });
+
+export const getMessages = (token: string, conversationId: string, before?: string) =>
+  request<{ messages: ChatMessage[]; hasMore: boolean }>(
+    `/messages/conversations/${conversationId}/messages${
+      before ? `?before=${encodeURIComponent(before)}` : ""
+    }`,
+    { token }
+  );
+
+export const sendMessage = (token: string, conversationId: string, text: string) =>
+  request<{ message: ChatMessage }>(
+    `/messages/conversations/${conversationId}/messages`,
+    { method: "POST", token, body: JSON.stringify({ text }) }
+  );
+
+export const deleteMessage = (token: string, conversationId: string, messageId: string) =>
+  request<{ success: boolean }>(
+    `/messages/conversations/${conversationId}/messages/${messageId}`,
+    { method: "DELETE", token }
+  );
+
+export const markConversationRead = (token: string, conversationId: string) =>
+  request<{ success: boolean }>(`/messages/conversations/${conversationId}/read`, {
+    method: "POST",
+    token,
+  });
+
+export const getUnreadMessageCount = (token: string) =>
+  request<{ count: number }>("/messages/unread-count", { token });
+
+export const listNotifications = (token: string) =>
+  request<{ notifications: AppNotification[] }>("/notifications", { token });
+
+export const markAllNotificationsRead = (token: string) =>
+  request<{ success: boolean }>("/notifications/read-all", { method: "POST", token });
+
+export const getUnreadNotificationCount = (token: string) =>
+  request<{ count: number }>("/notifications/unread-count", { token });

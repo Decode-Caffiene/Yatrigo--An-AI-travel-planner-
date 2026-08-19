@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -8,6 +8,10 @@ import { useGSAP } from "@gsap/react";
 import gsap from "gsap";
 
 import { useAuth } from "@/lib/auth-context";
+import { useChat } from "@/lib/chat-context";
+import { NotificationBell } from "@/components/NotificationBell";
+import { searchPlaces } from "@/lib/api";
+import { searchDestinations, type DestinationSuggestion } from "@/lib/destinations";
 
 const NAV_LINKS = [
   { label: "Explore", href: "/explore" },
@@ -16,11 +20,44 @@ const NAV_LINKS = [
 ];
 
 export function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, token, logout } = useAuth();
+  const { unreadCount } = useChat();
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
+
+  const [destination, setDestination] = useState("");
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [liveSuggestions, setLiveSuggestions] = useState<DestinationSuggestion[]>([]);
+
+  useEffect(() => {
+    const query = destination.trim();
+
+    if (!token || query.length < 3) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setLiveSuggestions([]);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      searchPlaces(token, query)
+        .then((res) => setLiveSuggestions(res.places))
+        .catch(() => setLiveSuggestions([]));
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [token, destination]);
+
+  const suggestions = useMemo(() => {
+    const local = searchDestinations(destination);
+    const localLabels = new Set(local.map((place) => place.label.toLowerCase()));
+    const extra = liveSuggestions.filter(
+      (place) => !localLabels.has(place.label.toLowerCase())
+    );
+
+    return [...local, ...extra].slice(0, 8);
+  }, [destination, liveSuggestions]);
 
   useGSAP(
     () => {
@@ -40,13 +77,18 @@ export function Navbar() {
     router.push("/login");
   };
 
-  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key !== "Enter") return;
+  const goToDestination = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed) return;
 
-    const destination = event.currentTarget.value.trim();
-    if (destination) {
-      router.push(`/trips/new?destination=${encodeURIComponent(destination)}`);
-    }
+    router.push(`/trips/new?destination=${encodeURIComponent(trimmed)}`);
+    setDestination("");
+    setIsSearchFocused(false);
+  };
+
+  const handleSearchKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") goToDestination(event.currentTarget.value);
+    if (event.key === "Escape") setIsSearchFocused(false);
   };
 
   return (
@@ -85,37 +127,65 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-stack-md">
-          <div className="hidden items-center rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary-fixed-dim md:flex">
-            <span className="material-symbols-outlined mr-2 text-xl text-outline">
-              search
-            </span>
-            <input
-              type="text"
-              placeholder="Search destinations..."
-              onKeyDown={handleSearchKeyDown}
-              className="w-48 border-none bg-transparent text-body-sm font-body-sm text-on-surface placeholder:text-outline-variant outline-none focus:ring-0"
-            />
+          <div className="relative hidden md:block">
+            <div className="flex items-center rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary-fixed-dim">
+              <span className="material-symbols-outlined mr-2 text-xl text-outline">
+                search
+              </span>
+              <input
+                type="text"
+                placeholder="Search destinations..."
+                autoComplete="off"
+                value={destination}
+                onChange={(e) => setDestination(e.target.value)}
+                onFocus={() => setIsSearchFocused(true)}
+                onBlur={() => setIsSearchFocused(false)}
+                onKeyDown={handleSearchKeyDown}
+                className="w-48 border-none bg-transparent text-body-sm font-body-sm text-on-surface placeholder:text-outline-variant outline-none focus:ring-0"
+              />
+            </div>
+
+            {isSearchFocused && suggestions.length > 0 && (
+              <ul className="absolute z-10 mt-1 w-64 overflow-hidden rounded-lg border border-surface-variant bg-surface-container-lowest shadow-lg">
+                {suggestions.map((place) => (
+                  <li key={place.label}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => {
+                        // Prevent the input's blur so the click registers
+                        // before the dropdown would otherwise disappear.
+                        e.preventDefault();
+                        goToDestination(place.label);
+                      }}
+                      className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left font-body-sm text-body-sm text-on-surface transition-colors hover:bg-primary/10"
+                    >
+                      <span className="material-symbols-outlined text-lg text-on-surface-variant">
+                        location_on
+                      </span>
+                      {place.label}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
-          <button
-            type="button"
-            title="Coming soon"
-            className="cursor-not-allowed rounded-full p-2 opacity-50 transition-colors hover:bg-surface-container-low"
-          >
-            <span className="material-symbols-outlined text-on-surface-variant">
-              notifications
-            </span>
-          </button>
+          <NotificationBell />
 
-          <button
-            type="button"
-            title="Coming soon"
-            className="cursor-not-allowed rounded-full p-2 opacity-50 transition-colors hover:bg-surface-container-low"
+          <Link
+            href="/messages"
+            title="Messages"
+            className="relative rounded-full p-2 transition-colors hover:bg-surface-container-low"
           >
             <span className="material-symbols-outlined text-on-surface-variant">
               chat_bubble
             </span>
-          </button>
+            {unreadCount > 0 && (
+              <span className="absolute top-0.5 right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 font-label-caps text-[10px] text-on-error">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </Link>
 
           {user && (
             <div className="relative">

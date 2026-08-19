@@ -19,6 +19,8 @@ import communityRoutes from "./routes/community.routes.js"
 import userRoutes from "./routes/user.routes.js"
 import uploadRoutes from "./routes/upload.routes.js"
 import destinationRoutes from "./routes/destination.routes.js"
+import messageRoutes from "./routes/message.routes.js"
+import notificationRoutes from "./routes/notification.routes.js"
 import errorHandler from "./middleware/error.middleware.js";
 import {protect} from "./middleware/auth.middleware.js"
 
@@ -58,5 +60,7 @@ app.use("/api/community",communityRoutes);
 app.use("/api/users",userRoutes);
 app.use("/api/uploads",uploadRoutes);
 app.use("/api/destinations",destinationRoutes);
+app.use("/api/messages",messageRoutes);
+app.use("/api/notifications",notificationRoutes);
 app.use(errorHandler);
 export default app;

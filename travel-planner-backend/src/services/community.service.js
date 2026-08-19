@@ -4,8 +4,12 @@ import Trip from "../models/trip.model.js";
 import User from "../models/user.model.js";
 import AppError from "../utils/AppError.js";
 import { completePastTrips } from "../utils/autoCompleteTrips.js";
+import { createNotification } from "./notification.service.js";
+import { getTrendingDestinations as getAITrendingDestinations } from "./rag.service.js";
+import { cached } from "../utils/cache.js";
 
 const POST_TYPES = ["story", "review", "question"];
+const TRENDING_DESTINATIONS_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const serializePost = (post, viewerId) => {
   const viewerIdStr = viewerId?.toString();
@@ -100,7 +104,7 @@ export const createPost = async (userId, data) => {
 
 export const listPosts = async (
   viewerId,
-  { type, following, saved, author, limit } = {}
+  { type, following, saved, author, limit, before } = {}
 ) => {
   const query = {};
 
@@ -121,12 +125,23 @@ export const listPosts = async (
     query.user = author;
   }
 
+  if (before) {
+    query.createdAt = { $lt: new Date(before) };
+  }
+
+  const pageSize = Math.min(Number(limit) || 20, 50);
+
   const posts = await Post.find(query)
     .sort({ createdAt: -1 })
-    .limit(Math.min(Number(limit) || 20, 50))
+    .limit(pageSize + 1)
     .populate("user", "name avatar");
 
-  return posts.map((post) => serializePost(post, viewerId));
+  const hasMore = posts.length > pageSize;
+
+  return {
+    posts: posts.slice(0, pageSize).map((post) => serializePost(post, viewerId)),
+    hasMore,
+  };
 };
 
 export const getPostById = async (postId, viewerId) => {
@@ -164,14 +179,25 @@ export const toggleLike = async (postId, userId) => {
   }
 
   const idx = post.likes.findIndex((id) => id.toString() === userId.toString());
-  if (idx >= 0) {
-    post.likes.splice(idx, 1);
-  } else {
+  const nowLiked = idx < 0;
+  if (nowLiked) {
     post.likes.push(userId);
+  } else {
+    post.likes.splice(idx, 1);
   }
 
   await post.save();
   await post.populate("user", "name avatar");
+
+  if (nowLiked) {
+    await createNotification({
+      recipientId: post.user._id,
+      actorId: userId,
+      type: "like",
+      postId: post._id,
+    });
+  }
+
   return serializePost(post, userId);
 };
 
@@ -215,6 +241,15 @@ export const addComment = async (postId, userId, content) => {
   await post.save();
 
   await comment.populate("user", "name avatar");
+
+  await createNotification({
+    recipientId: post.user,
+    actorId: userId,
+    type: "comment",
+    postId: post._id,
+    commentId: comment._id,
+  });
+
   return serializeComment(comment, userId);
 };
 
@@ -226,14 +261,26 @@ export const toggleCommentUpvote = async (commentId, userId) => {
   }
 
   const idx = comment.upvotes.findIndex((id) => id.toString() === userId.toString());
-  if (idx >= 0) {
-    comment.upvotes.splice(idx, 1);
-  } else {
+  const nowUpvoted = idx < 0;
+  if (nowUpvoted) {
     comment.upvotes.push(userId);
+  } else {
+    comment.upvotes.splice(idx, 1);
   }
 
   await comment.save();
   await comment.populate("user", "name avatar");
+
+  if (nowUpvoted) {
+    await createNotification({
+      recipientId: comment.user._id,
+      actorId: userId,
+      type: "upvote",
+      postId: comment.post,
+      commentId: comment._id,
+    });
+  }
+
   return serializeComment(comment, userId);
 };
 
@@ -257,6 +304,15 @@ export const markBestAnswer = async (postId, userId, commentId) => {
   post.bestAnswerComment = comment._id;
   await post.save();
   await post.populate("user", "name avatar");
+
+  await createNotification({
+    recipientId: comment.user,
+    actorId: userId,
+    type: "best_answer",
+    postId: post._id,
+    commentId: comment._id,
+  });
+
   return serializePost(post, userId);
 };
 
@@ -319,18 +375,12 @@ export const copyItineraryFromPost = async (postId, userId) => {
   return trip;
 };
 
-export const getTrendingDestinations = async () => {
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-  const results = await Post.aggregate([
-    { $match: { destination: { $nin: [null, ""] }, createdAt: { $gte: sevenDaysAgo } } },
-    { $group: { _id: "$destination", count: { $sum: 1 } } },
-    { $sort: { count: -1 } },
-    { $limit: 5 },
-  ]);
-
-  return results.map((r) => ({ destination: r._id, count: r.count }));
-};
+// AI-generated rather than counted from real posts — the community doesn't
+// have enough post volume yet for a "what's actually popular here" signal
+// to be meaningful. Cached globally (not per-user) since "trending" doesn't
+// need to be regenerated on every page load.
+export const getTrendingDestinations = () =>
+  cached("trending-destinations", TRENDING_DESTINATIONS_TTL_MS, getAITrendingDestinations);
 
 export const getTopTravelers = async () => {
   // Ranks on completed trips, so make sure finished trips have actually

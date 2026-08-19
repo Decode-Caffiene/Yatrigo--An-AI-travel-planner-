@@ -10,6 +10,7 @@ import { ApiError, resendVerification } from "@/lib/api";
 import { BackgroundCarousel } from "@/components/BackgroundCarousel";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { usePageEntrance } from "@/lib/usePageEntrance";
+import { isValidGmailAddress, GMAIL_ERROR_MESSAGE } from "@/lib/validators";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -29,6 +30,12 @@ export default function LoginPage() {
     setError(null);
     setNeedsVerification(false);
     setResendMessage(null);
+
+    if (!isValidGmailAddress(email)) {
+      setError(GMAIL_ERROR_MESSAGE);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -107,7 +114,9 @@ export default function LoginPage() {
               <input
                 type="email"
                 required
-                placeholder="Enter your email"
+                pattern="[a-zA-Z0-9._%+-]+@gmail\.com"
+                title="Please enter a valid Gmail address (e.g. name@gmail.com)"
+                placeholder="Enter your Gmail address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full rounded-lg border-0 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-lime-400"

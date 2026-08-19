@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema(
       required: function () {
         return !this.googleId;
       },
-      minlength: 6,
+      minlength: 8,
     },
 
     googleId: {

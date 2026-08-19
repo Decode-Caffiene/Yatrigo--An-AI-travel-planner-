@@ -76,7 +76,9 @@ const tripSchema = new mongoose.Schema(
     },
 
     hotel: { type: hotelSchema, default: null },
-    flight: { type: flightSchema, default: null },
+    // An array so round-trip and multi-city itineraries can hold more than
+    // one leg; a one-way trip is just an array of length 1.
+    flights: { type: [flightSchema], default: [] },
 
     itinerary: {
       type: mongoose.Schema.Types.Mixed,
@@ -95,6 +97,13 @@ const tripSchema = new mongoose.Schema(
       type: String,
       enum: ["planning", "completed", "cancelled"],
       default: "planning",
+    },
+
+    // Set once the "trip starts soon" reminder notification has fired, so
+    // the periodic reminder scan never notifies the same trip twice.
+    startReminderSent: {
+      type: Boolean,
+      default: false,
     },
   },
   {

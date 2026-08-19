@@ -2,6 +2,7 @@
 
 import { use, useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/auth-context";
 import { useRequireAuth } from "@/lib/use-require-auth";
@@ -11,6 +12,7 @@ import {
   followUser,
   getUserProfile,
   listPosts,
+  startConversation,
   updateProfile,
   uploadImage,
 } from "@/lib/api";
@@ -24,6 +26,7 @@ export default function ProfilePage({
   const { userId } = use(params);
   const { isReady } = useRequireAuth();
   const { token } = useAuth();
+  const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -32,6 +35,7 @@ export default function ProfilePage({
   const [error, setError] = useState<string | null>(null);
 
   const [isFollowBusy, setIsFollowBusy] = useState(false);
+  const [isMessageBusy, setIsMessageBusy] = useState(false);
 
   const [isEditingBio, setIsEditingBio] = useState(false);
   const [bioDraft, setBioDraft] = useState("");
@@ -74,6 +78,17 @@ export default function ProfilePage({
       );
     } finally {
       setIsFollowBusy(false);
+    }
+  };
+
+  const handleMessage = async () => {
+    if (!token || isMessageBusy) return;
+    setIsMessageBusy(true);
+    try {
+      const result = await startConversation(token, userId);
+      router.push(`/messages?c=${result.conversation.id}`);
+    } finally {
+      setIsMessageBusy(false);
     }
   };
 
@@ -159,18 +174,28 @@ export default function ProfilePage({
                 </div>
               </div>
               {!profile.isOwnProfile && (
-                <button
-                  type="button"
-                  onClick={handleFollow}
-                  disabled={isFollowBusy}
-                  className={`shrink-0 rounded-full px-6 py-2 font-button text-button transition-colors disabled:opacity-50 ${
-                    profile.isFollowedByMe
-                      ? "border border-surface-variant text-on-surface hover:border-error hover:text-error"
-                      : "bg-primary text-on-primary hover:bg-primary/90"
-                  }`}
-                >
-                  {profile.isFollowedByMe ? "Following" : "Follow"}
-                </button>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleMessage}
+                    disabled={isMessageBusy}
+                    className="rounded-full border border-surface-variant px-5 py-2 font-button text-button text-on-surface transition-colors hover:bg-surface-container disabled:opacity-50"
+                  >
+                    Message
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFollow}
+                    disabled={isFollowBusy}
+                    className={`rounded-full px-6 py-2 font-button text-button transition-colors disabled:opacity-50 ${
+                      profile.isFollowedByMe
+                        ? "border border-surface-variant text-on-surface hover:border-error hover:text-error"
+                        : "bg-primary text-on-primary hover:bg-primary/90"
+                    }`}
+                  >
+                    {profile.isFollowedByMe ? "Following" : "Follow"}
+                  </button>
+                </div>
               )}
             </div>
 

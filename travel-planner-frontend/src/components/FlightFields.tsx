@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Image from "next/image";
 
 import { useAuth } from "@/lib/auth-context";
 import { searchAirports } from "@/lib/api";
 import { airlineLogoUrl, searchAirlines } from "@/lib/airlines";
+import { AirlineLogo } from "@/components/AirlineLogo";
 import type { AirportSuggestion } from "@/types";
 
 export interface FlightFormValues {
@@ -156,11 +156,10 @@ export function FlightFields({
               className={`${inputClass} ${logo ? "pl-11" : ""}`}
             />
             {logo && (
-              <Image
-                src={logo}
+              <AirlineLogo
+                code={value.airlineCode}
                 alt={value.airline || value.airlineCode}
-                width={24}
-                height={24}
+                size={24}
                 className="pointer-events-none absolute top-1/2 left-3 h-6 w-6 -translate-y-1/2 rounded object-contain"
               />
             )}
@@ -169,7 +168,6 @@ export function FlightFields({
           {isAirlineFocused && airlineMatches.length > 0 && (
             <ul className={dropdownClass}>
               {airlineMatches.map((airline) => {
-                const optionLogo = airlineLogoUrl(airline.code);
                 return (
                   <li key={airline.code}>
                     <button
@@ -181,18 +179,22 @@ export function FlightFields({
                       }}
                       className={optionClass}
                     >
-                      {optionLogo ? (
-                        <Image
-                          src={optionLogo}
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+                        <AirlineLogo
+                          code={airline.code}
                           alt={airline.name}
-                          width={24}
-                          height={24}
-                          className="h-6 w-6 shrink-0 rounded object-contain"
+                          size={24}
+                          className="h-6 w-6 rounded object-contain"
                         />
-                      ) : (
-                        <span className="h-6 w-6 shrink-0" />
-                      )}
-                      <span className="min-w-0 flex-1 truncate">{airline.name}</span>
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">
+                        {airline.name}
+                        {airline.country && (
+                          <span className="ml-1.5 font-body-sm text-body-sm text-on-surface-variant">
+                            {airline.country}
+                          </span>
+                        )}
+                      </span>
                       <span className="shrink-0 font-label-caps text-label-caps text-on-surface-variant">
                         {airline.code}
                       </span>

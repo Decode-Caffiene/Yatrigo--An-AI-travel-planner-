@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const RAG_URL = "http://127.0.0.1:8000";
+const RAG_URL = process.env.RAG_URL || "http://127.0.0.1:8000";
 
 export const generateItinerary = async (trip) => {
     try {
@@ -17,6 +17,18 @@ export const generateItinerary = async (trip) => {
         );
 
         return response.data;
+    } catch (error) {
+        console.error(error.response?.data);
+
+        throw new Error("RAG service unavailable");
+    }
+};
+
+export const getTrendingDestinations = async () => {
+    try {
+        const response = await axios.get(`${RAG_URL}/trending-destinations`);
+
+        return response.data.destinations;
     } catch (error) {
         console.error(error.response?.data);
 

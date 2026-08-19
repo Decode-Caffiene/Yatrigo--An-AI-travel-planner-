@@ -87,7 +87,7 @@ export interface Trip {
   itinerary: Itinerary | null;
   itineraryGrounded: boolean | null;
   hotel: TripHotel | null;
-  flight: TripFlight | null;
+  flights: TripFlight[];
   status: TripStatus;
   createdAt: string;
   updatedAt: string;
@@ -101,7 +101,7 @@ export interface NewTripInput {
   startDate: string;
   endDate: string;
   hotel?: TripHotel | null;
-  flight?: TripFlight | null;
+  flights?: TripFlight[];
 }
 
 export interface GenerateItineraryResult {
@@ -185,7 +185,7 @@ export interface UserProfile {
 
 export interface TrendingDestination {
   destination: string;
-  count: number;
+  reason: string;
 }
 
 export interface TopTraveler {
@@ -201,8 +201,17 @@ export interface TravelEvent {
   date: string | null;
   time: string | null;
   venue: string | null;
+  country: string | null;
   category: string | null;
   url: string | null;
+}
+
+export interface EventDetails {
+  found: boolean;
+  title: string;
+  extract: string | null;
+  imageUrl: string | null;
+  wikipediaUrl: string | null;
 }
 
 export interface DestinationGuide {
@@ -229,5 +238,52 @@ export interface AISuggestion {
   blurb: string;
   icon: string;
   imageUrl: string | null;
+}
+
+export interface ChatUser {
+  id: string;
+  name: string;
+  avatar: string | null;
+}
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  text: string | null;
+  deleted: boolean;
+  createdAt: string;
+}
+
+export interface ConversationParticipant extends ChatUser {
+  lastReadAt: string | null;
+}
+
+export type NotificationType =
+  | "follow"
+  | "like"
+  | "comment"
+  | "upvote"
+  | "best_answer"
+  | "itinerary_ready"
+  | "itinerary_updated"
+  | "trip_reminder";
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  message: string;
+  link: string;
+  actor: ChatUser | null;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface Conversation {
+  id: string;
+  otherUser: ConversationParticipant | null;
+  lastMessage: { text: string | null; senderId: string; createdAt: string } | null;
+  unreadCount: number;
+  updatedAt: string;
 }
 

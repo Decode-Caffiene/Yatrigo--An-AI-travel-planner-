@@ -12,19 +12,20 @@ export const createPost = asyncHandler(async (req, res) => {
 });
 
 export const listPosts = asyncHandler(async (req, res) => {
-  const { type, following, saved, author, limit } = req.query;
-  const posts = await communityService.listPosts(req.user._id, {
+  const { type, following, saved, author, limit, before } = req.query;
+  const result = await communityService.listPosts(req.user._id, {
     type,
     following,
     saved,
     author,
     limit,
+    before,
   });
 
   res.status(200).json({
     success: true,
-    count: posts.length,
-    posts,
+    count: result.posts.length,
+    ...result,
   });
 });
 

@@ -3,6 +3,7 @@ import Trip from "../models/trip.model.js";
 import Post from "../models/post.model.js";
 import AppError from "../utils/AppError.js";
 import { completePastTrips } from "../utils/autoCompleteTrips.js";
+import { createNotification } from "./notification.service.js";
 
 export const getUserProfile = async (userId, viewerId) => {
   const user = await User.findById(userId).select("name bio avatar followers");
@@ -61,6 +62,24 @@ export const updateProfile = async (userId, data) => {
   return { id: user._id, name: user.name, bio: user.bio || "", avatar: user.avatar || null };
 };
 
+export const searchUsers = async (query, viewerId) => {
+  const trimmed = query?.trim();
+  if (!trimmed) return [];
+
+  const users = await User.find({
+    _id: { $ne: viewerId },
+    name: { $regex: trimmed, $options: "i" },
+  })
+    .select("name avatar")
+    .limit(10);
+
+  return users.map((user) => ({
+    id: user._id,
+    name: user.name,
+    avatar: user.avatar || null,
+  }));
+};
+
 export const toggleFollow = async (targetUserId, viewerId) => {
   if (targetUserId.toString() === viewerId.toString()) {
     throw new AppError("You can't follow yourself.", 400);
@@ -82,6 +101,10 @@ export const toggleFollow = async (targetUserId, viewerId) => {
   }
 
   await target.save();
+
+  if (nowFollowing) {
+    await createNotification({ recipientId: targetUserId, actorId: viewerId, type: "follow" });
+  }
 
   return { isFollowedByMe: nowFollowing, followerCount: target.followers.length };
 };

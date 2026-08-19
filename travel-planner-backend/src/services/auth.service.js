@@ -7,6 +7,11 @@ import { hashPassword, comparePassword } from "../utils/hash.js";
 import { generateToken } from "../utils/jwt.js";
 import { sendEmail } from "../utils/email.js";
 import AppError from "../utils/AppError.js";
+import {
+  isValidGmailAddress,
+  isValidPassword,
+  PASSWORD_REQUIREMENTS_MESSAGE,
+} from "../utils/validators.js";
 
 const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -39,6 +44,14 @@ const sendVerificationEmail = async (user) => {
  * Register User
  */
 export const registerUser = async ({ name, email, password }) => {
+  if (!isValidGmailAddress(email)) {
+    throw new AppError("Only Gmail addresses (e.g. name@gmail.com) are allowed to register", 400);
+  }
+
+  if (!isValidPassword(password)) {
+    throw new AppError(PASSWORD_REQUIREMENTS_MESSAGE, 400);
+  }
+
   // Check if user already exists
   const existingUser = await User.findOne({ email });
 
@@ -192,6 +205,10 @@ export const forgotPassword = async ({ email }) => {
 export const resetPassword = async ({ token, password }) => {
   if (!token || !password) {
     throw new AppError("Token and new password are required", 400);
+  }
+
+  if (!isValidPassword(password)) {
+    throw new AppError(PASSWORD_REQUIREMENTS_MESSAGE, 400);
   }
 
   const user = await User.findOne({

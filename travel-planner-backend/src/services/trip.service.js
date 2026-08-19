@@ -2,6 +2,9 @@ import Trip from "../models/trip.model.js";
 import AppError from "../utils/AppError.js";
 import { completePastTrips } from "../utils/autoCompleteTrips.js";
 import { generateItinerary } from "./rag.service.js";
+import { createNotification } from "./notification.service.js";
+
+const REMINDER_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Create Trip
@@ -15,7 +18,7 @@ export const createTrip = async (tripData, userId) => {
     startDate,
     endDate,
     hotel,
-    flight,
+    flights,
   } = tripData;
 
   if (new Date(startDate) > new Date(endDate)) {
@@ -34,7 +37,7 @@ export const createTrip = async (tripData, userId) => {
     startDate,
     endDate,
     hotel: hotel || null,
-    flight: flight || null,
+    flights: Array.isArray(flights) ? flights : [],
   });
 
   return trip;
@@ -154,12 +157,20 @@ export const deleteTrip = async (
  * Shared helper for generate/regenerate
  */
 const saveRagItinerary = async (trip) => {
+  const isRegeneration = !!trip.itinerary;
+
   const ragResponse = await generateItinerary(trip);
 
   trip.itinerary = ragResponse.itinerary;
   trip.itineraryGrounded = ragResponse.grounded;
 
   await trip.save();
+
+  await createNotification({
+    recipientId: trip.user,
+    type: isRegeneration ? "itinerary_updated" : "itinerary_ready",
+    tripId: trip._id,
+  });
 
   return {
     itinerary: trip.itinerary,
@@ -211,4 +222,33 @@ export const regenerateTripItinerary = async (
   }
 
   return await saveRagItinerary(trip);
+};
+
+/**
+ * Notifies each planning trip's owner once, the first time this scan finds
+ * their trip starting within the next 24 hours. Meant to be called on a
+ * recurring timer (see server.js) rather than per-request.
+ */
+export const sendUpcomingTripReminders = async () => {
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + REMINDER_WINDOW_MS);
+
+  const trips = await Trip.find({
+    status: "planning",
+    startReminderSent: false,
+    startDate: { $gte: now, $lte: windowEnd },
+  });
+
+  for (const trip of trips) {
+    await createNotification({
+      recipientId: trip.user,
+      type: "trip_reminder",
+      tripId: trip._id,
+    });
+
+    trip.startReminderSent = true;
+    await trip.save();
+  }
+
+  return trips.length;
 };

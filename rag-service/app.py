@@ -5,6 +5,7 @@ from typing import List
 from services.city_generator import generate_cities
 from services.retriever import retrieve_context
 from services.llm import generate_answer
+from services.trending_generator import generate_trending_destinations
 from services.validator import validate_itinerary
 from utils.prompt import build_rag_prompt, calculate_trip_days
 
@@ -103,4 +104,14 @@ def generate_itinerary(request: ItineraryRequest):
             }
             for doc in docs
         ],
+    }
+
+
+@app.get("/trending-destinations")
+def trending_destinations():
+    destinations = generate_trending_destinations()
+
+    return {
+        "success": True,
+        "destinations": destinations,
     }

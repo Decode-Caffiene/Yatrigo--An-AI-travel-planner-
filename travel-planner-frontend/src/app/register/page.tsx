@@ -9,7 +9,14 @@ import { useAuth } from "@/lib/auth-context";
 import { ApiError } from "@/lib/api";
 import { BackgroundCarousel } from "@/components/BackgroundCarousel";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { PasswordStrengthMeter } from "@/components/PasswordStrengthMeter";
 import { usePageEntrance } from "@/lib/usePageEntrance";
+import {
+  isValidGmailAddress,
+  isValidPassword,
+  GMAIL_ERROR_MESSAGE,
+  PASSWORD_ERROR_MESSAGE,
+} from "@/lib/validators";
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -26,6 +33,17 @@ export default function RegisterPage() {
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     setError(null);
+
+    if (!isValidGmailAddress(email)) {
+      setError(GMAIL_ERROR_MESSAGE);
+      return;
+    }
+
+    if (!isValidPassword(password)) {
+      setError(PASSWORD_ERROR_MESSAGE);
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -119,11 +137,16 @@ export default function RegisterPage() {
                   <input
                     type="email"
                     required
-                    placeholder="Enter your email"
+                    pattern="[a-zA-Z0-9._%+-]+@gmail\.com"
+                    title="Please enter a valid Gmail address (e.g. name@gmail.com)"
+                    placeholder="Enter your Gmail address"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="w-full rounded-lg border-0 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-lime-400"
                   />
+                  <p className="mt-1 text-xs text-white/60">
+                    Only Gmail addresses (e.g. name@gmail.com) are accepted.
+                  </p>
                 </div>
 
                 <div>
@@ -133,12 +156,18 @@ export default function RegisterPage() {
                   <input
                     type="password"
                     required
-                    minLength={6}
-                    placeholder="At least 6 characters"
+                    minLength={8}
+                    pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}"
+                    title="At least 8 characters, with an uppercase letter, a lowercase letter, a number, and a special character"
+                    placeholder="At least 8 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full rounded-lg border-0 bg-white px-3.5 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-lime-400"
                   />
+                  <p className="mt-1 text-xs text-white/60">
+                    Must include an uppercase letter, a lowercase letter, a number, and a special character.
+                  </p>
+                  <PasswordStrengthMeter password={password} />
                 </div>
 
                 {error && <p className="text-sm text-red-300">{error}</p>}

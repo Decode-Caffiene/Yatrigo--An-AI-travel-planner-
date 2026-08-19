@@ -81,14 +81,29 @@ function NewTripForm() {
   const [liveSuggestions, setLiveSuggestions] = useState<DestinationSuggestion[]>([]);
 
   // Step 2 — hotel
+  const [hotelMode, setHotelMode] = useState<"search" | "manual" | null>(null);
   const [hotelForm, setHotelForm] = useState(emptyHotelForm);
   const [hotelResults, setHotelResults] = useState<HotelSearchResult[]>([]);
   const [isSearchingHotels, setIsSearchingHotels] = useState(false);
+  const [hasSearchedHotels, setHasSearchedHotels] = useState(false);
   const [hotelSearchError, setHotelSearchError] = useState<string | null>(null);
   const [selectedHotelName, setSelectedHotelName] = useState<string | null>(null);
 
-  // Step 3 — flight
-  const [flightForm, setFlightForm] = useState(emptyFlightForm);
+  // Step 3 — flights (an array so round-trip/multi-city itineraries can
+  // hold more than one leg)
+  const [flightForms, setFlightForms] = useState([emptyFlightForm]);
+
+  const updateFlightLeg = (index: number, next: typeof emptyFlightForm) => {
+    setFlightForms((current) => current.map((leg, i) => (i === index ? next : leg)));
+  };
+
+  const addFlightLeg = () => {
+    setFlightForms((current) => [...current, emptyFlightForm]);
+  };
+
+  const removeFlightLeg = (index: number) => {
+    setFlightForms((current) => current.filter((_, i) => i !== index));
+  };
 
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -168,7 +183,15 @@ function NewTripForm() {
         err instanceof ApiError ? err.message : "Could not search hotels."
       );
     } finally {
+      setHasSearchedHotels(true);
       setIsSearchingHotels(false);
+    }
+  };
+
+  const chooseHotelSearch = () => {
+    setHotelMode("search");
+    if (!hasSearchedHotels && !isSearchingHotels) {
+      runHotelSearch();
     }
   };
 
@@ -184,7 +207,6 @@ function NewTripForm() {
 
     setStepOneError(null);
     setStep(2);
-    runHotelSearch();
   };
 
   const selectHotelResult = (hotel: HotelSearchResult) => {
@@ -227,19 +249,18 @@ function NewTripForm() {
               photoUrl: hotelForm.photoUrl || undefined,
             }
           : null,
-        flight:
-          flightForm.airline || flightForm.flightNumber
-            ? {
-                airline: flightForm.airline || undefined,
-                airlineCode: flightForm.airlineCode || undefined,
-                flightNumber: flightForm.flightNumber || undefined,
-                departureAirport: flightForm.departureAirport || undefined,
-                arrivalAirport: flightForm.arrivalAirport || undefined,
-                departureTime: flightForm.departureTime || undefined,
-                arrivalTime: flightForm.arrivalTime || undefined,
-                confirmationNumber: flightForm.confirmationNumber || undefined,
-              }
-            : null,
+        flights: flightForms
+          .filter((leg) => leg.airline || leg.flightNumber)
+          .map((leg) => ({
+            airline: leg.airline || undefined,
+            airlineCode: leg.airlineCode || undefined,
+            flightNumber: leg.flightNumber || undefined,
+            departureAirport: leg.departureAirport || undefined,
+            arrivalAirport: leg.arrivalAirport || undefined,
+            departureTime: leg.departureTime || undefined,
+            arrivalTime: leg.arrivalTime || undefined,
+            confirmationNumber: leg.confirmationNumber || undefined,
+          })),
       });
 
       router.push(`/trips/${result.trip._id}`);
@@ -474,6 +495,41 @@ function NewTripForm() {
         {/* Step 2: Hotel */}
         {step === 2 && (
           <div className="space-y-5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={chooseHotelSearch}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 font-button text-button transition-colors ${
+                  hotelMode === "search"
+                    ? "border-primary bg-primary text-on-primary"
+                    : "border-primary text-primary hover:bg-primary/5"
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">search</span>
+                Search hotels
+              </button>
+              <button
+                type="button"
+                onClick={() => setHotelMode("manual")}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 font-button text-button transition-colors ${
+                  hotelMode === "manual"
+                    ? "border-primary bg-primary text-on-primary"
+                    : "border-primary text-primary hover:bg-primary/5"
+                }`}
+              >
+                <span className="material-symbols-outlined text-lg">edit_note</span>
+                Enter hotel details
+              </button>
+            </div>
+
+            {hotelMode === null && (
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                Search live availability in {destination}, or add a hotel you already
+                booked. You can also skip this step.
+              </p>
+            )}
+
+            {hotelMode === "search" && (
             <div>
               <h2 className="mb-stack-sm flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
                 <span className="material-symbols-outlined text-primary">hotel</span>
@@ -485,16 +541,29 @@ function NewTripForm() {
                   Searching live availability...
                 </p>
               )}
-              {hotelSearchError && (
-                <p className="font-body-sm text-body-sm text-error">
-                  {hotelSearchError}
-                </p>
+              {!isSearchingHotels && hotelSearchError && (
+                <div className="space-y-2">
+                  <p className="font-body-sm text-body-sm text-error">
+                    {hotelSearchError}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={runHotelSearch}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-primary px-3 py-1.5 font-button text-button text-primary transition-colors hover:bg-primary/5"
+                  >
+                    <span className="material-symbols-outlined text-lg">refresh</span>
+                    Try again
+                  </button>
+                </div>
               )}
-              {!isSearchingHotels && hotelResults.length === 0 && !hotelSearchError && (
-                <p className="font-body-sm text-body-sm text-on-surface-variant">
-                  No hotels found for these dates.
-                </p>
-              )}
+              {!isSearchingHotels &&
+                hasSearchedHotels &&
+                hotelResults.length === 0 &&
+                !hotelSearchError && (
+                  <p className="font-body-sm text-body-sm text-on-surface-variant">
+                    No hotels found for these dates.
+                  </p>
+                )}
 
               <div className="max-h-80 space-y-2 overflow-y-auto">
                 {hotelResults.map((hotel, index) => {
@@ -543,10 +612,12 @@ function NewTripForm() {
                 })}
               </div>
             </div>
+            )}
 
-            <div className="border-t border-surface-variant pt-stack-md">
+            {hotelMode === "manual" && (
+            <div>
               <h3 className="mb-stack-sm font-headline-sm text-headline-sm text-on-surface">
-                Or enter hotel details manually
+                Hotel details
               </h3>
               <div className="space-y-3">
                 <div>
@@ -637,6 +708,7 @@ function NewTripForm() {
                 </div>
               </div>
             </div>
+            )}
 
             <div className="flex gap-2">
               <button
@@ -666,10 +738,49 @@ function NewTripForm() {
               Flight details
             </h2>
             <p className="-mt-3 font-body-sm text-body-sm text-on-surface-variant">
-              Already booked a flight? Add the details here (optional).
+              Already booked flights? Add each leg here — outbound, return, or a
+              multi-city itinerary (optional).
             </p>
 
-            <FlightFields value={flightForm} onChange={setFlightForm} />
+            <div className="space-y-4">
+              {flightForms.map((leg, index) => (
+                <div
+                  key={index}
+                  className="rounded-xl border border-surface-variant p-4"
+                >
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="font-body-sm font-semibold text-body-sm text-on-surface">
+                      Flight {index + 1}
+                    </p>
+                    {flightForms.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeFlightLeg(index)}
+                        className="flex items-center gap-1 font-body-sm text-body-sm text-error hover:underline"
+                      >
+                        <span className="material-symbols-outlined text-lg">
+                          delete
+                        </span>
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <FlightFields
+                    value={leg}
+                    onChange={(next) => updateFlightLeg(index, next)}
+                  />
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={addFlightLeg}
+              className="flex items-center gap-1.5 font-button text-button text-primary hover:underline"
+            >
+              <span className="material-symbols-outlined text-lg">add</span>
+              Add another flight
+            </button>
 
             {error && (
               <p className="flex items-center gap-1.5 font-body-sm text-body-sm text-error">

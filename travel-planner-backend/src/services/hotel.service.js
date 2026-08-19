@@ -10,10 +10,57 @@ const rapidApiHeaders = () => ({
   "X-RapidAPI-Host": RAPIDAPI_HOST,
 });
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// A 429 with the monthly quota exhausted won't recover on retry — surface it
+// with the reset date instead of a "try again" message.
+const throwIfQuotaExhausted = (error) => {
+  const headers = error.response?.headers || {};
+
+  if (headers["x-ratelimit-requests-remaining"] !== "0") return;
+
+  const resetSeconds = Number(headers["x-ratelimit-requests-reset"]);
+  const resetsOn = Number.isFinite(resetSeconds)
+    ? new Date(Date.now() + resetSeconds * 1000).toLocaleDateString("en-US", {
+        month: "long",
+        day: "numeric",
+      })
+    : null;
+
+  throw new AppError(
+    `The monthly quota for the hotel search API has been used up${
+      resetsOn ? ` (resets on ${resetsOn})` : ""
+    }. Please enter your hotel details manually.`,
+    429
+  );
+};
+
+// The free RapidAPI tier also throttles per-second, so the destination lookup
+// and the hotel search fired back-to-back can get a 429 — one paced retry
+// recovers that case without burning extra quota.
+const rapidApiGet = async (url, params) => {
+  try {
+    return await axios.get(url, { params, headers: rapidApiHeaders() });
+  } catch (error) {
+    if (error.response?.status !== 429) throw error;
+
+    throwIfQuotaExhausted(error);
+
+    await sleep(1500);
+    return axios.get(url, { params, headers: rapidApiHeaders() });
+  }
+};
+
+// dest_id for a destination string never changes — cache it so each hotel
+// search costs one upstream call instead of two.
+const destinationCache = new Map();
+
 const resolveDestination = async (destination) => {
-  const { data } = await axios.get(`${BASE_URL}/api/v1/hotels/searchDestination`, {
-    params: { query: destination },
-    headers: rapidApiHeaders(),
+  const cacheKey = destination.trim().toLowerCase();
+  if (destinationCache.has(cacheKey)) return destinationCache.get(cacheKey);
+
+  const { data } = await rapidApiGet(`${BASE_URL}/api/v1/hotels/searchDestination`, {
+    query: destination,
   });
 
   const match = data.data?.[0];
@@ -22,7 +69,9 @@ const resolveDestination = async (destination) => {
     throw new AppError(`Could not find a Booking.com destination for "${destination}".`, 404);
   }
 
-  return { destId: match.dest_id, searchType: match.search_type };
+  const resolved = { destId: match.dest_id, searchType: match.search_type };
+  destinationCache.set(cacheKey, resolved);
+  return resolved;
 };
 
 /**
@@ -36,21 +85,18 @@ export const searchHotels = async (destination, checkInDate, checkOutDate, adult
     throw new AppError("BOOKING_API_KEY is not configured.", 500);
   }
 
-  const { destId, searchType } = await resolveDestination(destination);
-
   try {
-    const { data } = await axios.get(`${BASE_URL}/api/v1/hotels/searchHotels`, {
-      params: {
-        dest_id: destId,
-        search_type: searchType,
-        arrival_date: checkInDate,
-        departure_date: checkOutDate,
-        adults,
-        room_qty: 1,
-        page_number: 1,
-        currency_code: "USD",
-      },
-      headers: rapidApiHeaders(),
+    const { destId, searchType } = await resolveDestination(destination);
+
+    const { data } = await rapidApiGet(`${BASE_URL}/api/v1/hotels/searchHotels`, {
+      dest_id: destId,
+      search_type: searchType,
+      arrival_date: checkInDate,
+      departure_date: checkOutDate,
+      adults,
+      room_qty: 1,
+      page_number: 1,
+      currency_code: "USD",
     });
 
     const hotels = data.data?.hotels || [];
@@ -69,7 +115,16 @@ export const searchHotels = async (destination, checkInDate, checkOutDate, adult
       photoUrl: entry.property?.photoUrls?.[0] ?? null,
     }));
   } catch (error) {
+    if (error instanceof AppError) throw error;
+
     console.error(error.response?.data || error.message);
+
+    if (error.response?.status === 429) {
+      throw new AppError(
+        "Hotel search is rate-limited right now. Please wait a moment and try again, or enter your hotel details manually.",
+        429
+      );
+    }
 
     throw new AppError(`Could not fetch hotel offers for "${destination}".`, 502);
   }

@@ -196,3 +196,116 @@ export const getWikipediaArticleImage = async (place) =>
 export const getWikipediaImage = async (place) =>
   (await getWikipediaArticleImage(place)) ||
   (await fetchCommonsSearchImage(place));
+
+const fetchSummary = async (title) => {
+  try {
+    const { data } = await axios.get(`${SUMMARY_URL}${encodeURIComponent(title)}`, {
+      headers: { "User-Agent": USER_AGENT },
+      params: { redirect: true },
+    });
+
+    // A disambiguation page isn't an article about anything in particular —
+    // treat it the same as a miss so the caller can try a more specific query.
+    if (data.type === "disambiguation") return null;
+
+    const imageUrl = data.originalimage?.source || data.thumbnail?.source || null;
+
+    return {
+      title: data.title,
+      extract: data.extract || null,
+      imageUrl: imageUrl ? toSizedUrl(imageUrl) : null,
+      wikipediaUrl: data.content_urls?.desktop?.page || null,
+    };
+  } catch {
+    return null;
+  }
+};
+
+// Commons search scoped to a resolved article title — used when the
+// article's own summary has no lead image (common for event/festival
+// articles). Unlike fetchCommonsSearchImage this doesn't require the place
+// disambiguation logic, since we already have the real, resolved title.
+const fetchTitleCommonsImage = async (title) => {
+  try {
+    const { data } = await axios.get(COMMONS_API_URL, {
+      headers: { "User-Agent": USER_AGENT },
+      params: {
+        action: "query",
+        generator: "search",
+        gsrsearch: `intitle:"${title}" filetype:bitmap`,
+        gsrnamespace: 6,
+        gsrlimit: 10,
+        prop: "imageinfo",
+        iiprop: "url",
+        iiurlwidth: 1600,
+        format: "json",
+      },
+    });
+
+    const pages = Object.values(data.query?.pages || {});
+
+    for (const page of pages) {
+      if (ARCHIVAL_CONTENT_PATTERN.test(page.title || "")) continue;
+
+      const url = page.imageinfo?.[0]?.thumburl || page.imageinfo?.[0]?.url;
+      if (url && isPhotograph(url)) return toSizedUrl(url);
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+const searchForTitle = async (query) => {
+  try {
+    const { data } = await axios.get(WIKIPEDIA_API_URL, {
+      headers: { "User-Agent": USER_AGENT },
+      params: {
+        action: "query",
+        list: "search",
+        srsearch: query,
+        srlimit: 1,
+        format: "json",
+        formatversion: 2,
+      },
+    });
+
+    return data.query?.search?.[0]?.title || null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Real (not AI-generated) summary of a topic — the article's own lead
+ * paragraph, its lead image, and a link to the full article — sourced
+ * straight from Wikipedia. Tries the query as a direct article title first,
+ * then falls back to Wikipedia's own search to resolve near-miss phrasing
+ * (an AI-generated event name rarely matches the article title exactly).
+ * Returns null if nothing verifiable was found — the caller should say so
+ * rather than fall back to more AI text.
+ */
+export const getWikipediaSummary = async (query) => {
+  const direct = await fetchSummary(query);
+
+  let result = direct;
+  if (!result) {
+    const searchedTitle = await searchForTitle(query);
+    if (!searchedTitle) return null;
+
+    result = await fetchSummary(searchedTitle);
+    if (!result) return null;
+  }
+
+  // Plenty of event/festival articles have no lead image (the summary API
+  // only returns the infobox/lead image, which many don't have) even
+  // though real photos of the event exist on Commons — worth a second
+  // lookup rather than leaving the caller with nothing but a fabricated
+  // stock photo as their only option.
+  if (!result.imageUrl) {
+    result.imageUrl = await fetchTitleCommonsImage(result.title);
+  }
+
+  return result;
+};
