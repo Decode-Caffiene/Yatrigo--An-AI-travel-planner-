@@ -317,7 +317,7 @@ export default function TripsPage() {
                           {trip.interests.map((interest) => (
                             <span
                               key={interest}
-                              className="rounded bg-surface-container px-2 py-1 text-xs font-medium"
+                              className="rounded bg-surface-container px-2 py-1 text-xs font-medium text-on-surface"
                             >
                               {interest}
                             </span>
