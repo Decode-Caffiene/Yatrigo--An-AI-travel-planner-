@@ -1,2 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
 groq
 sentence-transformers
+langchain-community
+langchain-chroma
+langchain-huggingface
+langchain-text-splitters
+pypdf
