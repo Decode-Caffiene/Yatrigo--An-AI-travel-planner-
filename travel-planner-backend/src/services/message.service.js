@@ -13,14 +13,40 @@ const toUserSummary = (user, lastReadAt) => ({
   lastReadAt: lastReadAt || null,
 });
 
+// Mongoose stores the attachment's kind as `attachmentType` (see
+// message.model.js for why it can't be named `type` in the schema) — the
+// API and frontend still talk about it as `attachment.type`.
+const toAttachmentDTO = (attachment) =>
+  attachment
+    ? {
+        url: attachment.url,
+        type: attachment.attachmentType,
+        name: attachment.name,
+        mimeType: attachment.mimeType,
+        size: attachment.size,
+      }
+    : null;
+
 const toMessageDTO = (message) => ({
   id: message._id,
   conversationId: message.conversation,
   senderId: message.sender,
-  text: message.deleted ? null : message.text,
+  text: message.deleted ? null : message.text || null,
+  attachment: message.deleted ? null : toAttachmentDTO(message.attachment),
   deleted: message.deleted,
+  edited: message.edited,
   createdAt: message.createdAt,
 });
+
+const ATTACHMENT_PREVIEW_LABELS = {
+  image: "\u{1F4F7} Photo",
+  file: "\u{1F4CE} File",
+};
+
+// A conversation-list preview needs some text even when the message itself
+// is just an attachment with no caption.
+const previewText = (text, attachmentType) =>
+  text || (attachmentType ? ATTACHMENT_PREVIEW_LABELS[attachmentType] : "");
 
 const emitToParticipants = (participants, event, payload) => {
   const io = getIO();
@@ -128,10 +154,34 @@ export const getMessages = async (userId, conversationId, before) => {
   return { messages: page.map(toMessageDTO), hasMore };
 };
 
-export const sendMessage = async (userId, conversationId, text) => {
-  const trimmed = text?.trim();
-  if (!trimmed) {
-    throw new AppError("Message text is required.", 400);
+const ATTACHMENT_TYPES = ["image", "file"];
+
+const validateAttachment = (attachment) => {
+  if (!attachment) return undefined;
+
+  const { url, type, name, mimeType, size } = attachment;
+  if (
+    typeof url !== "string" ||
+    !url ||
+    !ATTACHMENT_TYPES.includes(type) ||
+    typeof name !== "string" ||
+    !name ||
+    typeof mimeType !== "string" ||
+    !mimeType ||
+    typeof size !== "number"
+  ) {
+    throw new AppError("Invalid attachment.", 400);
+  }
+
+  return { url, type, name, mimeType, size };
+};
+
+export const sendMessage = async (userId, conversationId, text, attachment) => {
+  const trimmed = text?.trim() || "";
+  const validAttachment = validateAttachment(attachment);
+
+  if (!trimmed && !validAttachment) {
+    throw new AppError("Message text or an attachment is required.", 400);
   }
 
   const conversation = await Conversation.findById(conversationId);
@@ -143,15 +193,70 @@ export const sendMessage = async (userId, conversationId, text) => {
   const message = await Message.create({
     conversation: conversationId,
     sender: userId,
-    text: trimmed,
+    text: trimmed || undefined,
+    attachment: validAttachment && {
+      url: validAttachment.url,
+      attachmentType: validAttachment.type,
+      name: validAttachment.name,
+      mimeType: validAttachment.mimeType,
+      size: validAttachment.size,
+    },
   });
 
-  conversation.lastMessage = { text: trimmed, sender: userId, createdAt: message.createdAt };
+  conversation.lastMessage = {
+    text: previewText(trimmed, validAttachment?.type),
+    sender: userId,
+    createdAt: message.createdAt,
+  };
   conversation.lastReadAt.set(userId.toString(), message.createdAt);
   await conversation.save();
 
   const dto = toMessageDTO(message);
   emitToParticipants(conversation.participants, "message:new", dto);
+
+  return dto;
+};
+
+export const editMessage = async (userId, conversationId, messageId, text) => {
+  const conversation = await Conversation.findById(conversationId);
+  if (!conversation) {
+    throw new AppError("Conversation not found.", 404);
+  }
+  assertParticipant(conversation, userId);
+
+  const message = await Message.findOne({ _id: messageId, conversation: conversationId });
+  if (!message) {
+    throw new AppError("Message not found.", 404);
+  }
+  if (message.sender.toString() !== userId.toString()) {
+    throw new AppError("You can only edit your own messages.", 403);
+  }
+  if (message.deleted) {
+    throw new AppError("Can't edit a deleted message.", 400);
+  }
+
+  const trimmed = text?.trim() || "";
+  if (!trimmed && !message.attachment) {
+    throw new AppError("Message text is required.", 400);
+  }
+
+  message.text = trimmed || undefined;
+  message.edited = true;
+  await message.save();
+
+  // If this is the conversation's most recent message, its preview needs
+  // to reflect the edit too.
+  if (conversation.lastMessage?.createdAt?.getTime() === message.createdAt.getTime()) {
+    conversation.lastMessage = {
+      text: previewText(trimmed, message.attachment?.attachmentType),
+      sender: message.sender,
+      createdAt: message.createdAt,
+    };
+    await conversation.save();
+  }
+
+  const dto = toMessageDTO(message);
+  emitToParticipants(conversation.participants, "message:edited", dto);
 
   return dto;
 };
@@ -185,7 +290,11 @@ export const deleteMessage = async (userId, conversationId, messageId) => {
     }).sort({ createdAt: -1 });
 
     conversation.lastMessage = previous
-      ? { text: previous.text, sender: previous.sender, createdAt: previous.createdAt }
+      ? {
+          text: previewText(previous.text, previous.attachment?.attachmentType),
+          sender: previous.sender,
+          createdAt: previous.createdAt,
+        }
       : null;
     await conversation.save();
   }

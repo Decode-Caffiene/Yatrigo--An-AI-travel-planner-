@@ -2,6 +2,7 @@ import express from "express";
 
 import {
   deleteMessage,
+  editMessage,
   getMessages,
   getUnreadCount,
   listConversations,
@@ -19,6 +20,7 @@ router.get("/conversations", listConversations);
 router.post("/conversations", startConversation);
 router.get("/conversations/:id/messages", getMessages);
 router.post("/conversations/:id/messages", sendMessage);
+router.patch("/conversations/:id/messages/:messageId", editMessage);
 router.delete("/conversations/:id/messages/:messageId", deleteMessage);
 router.post("/conversations/:id/read", markRead);
 router.get("/unread-count", getUnreadCount);

@@ -23,3 +23,28 @@ export const uploadImageBuffer = (buffer) => {
     stream.end(buffer);
   });
 };
+
+// Chat attachments can be any file type — "auto" lets Cloudinary route
+// images/videos through its media pipeline and everything else as a raw file.
+export const uploadFileBuffer = (buffer) => {
+  if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_SECRET) {
+    throw new AppError(
+      "File uploads are not configured yet (missing Cloudinary credentials).",
+      500
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: "yatrigo/chat", resource_type: "auto" },
+      (error, result) => {
+        if (error || !result) {
+          reject(new AppError("File upload failed.", 502));
+          return;
+        }
+        resolve(result.secure_url);
+      }
+    );
+    stream.end(buffer);
+  });
+};

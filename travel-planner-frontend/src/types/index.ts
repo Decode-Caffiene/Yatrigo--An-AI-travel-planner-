@@ -287,12 +287,24 @@ export interface ChatUser {
   avatar: string | null;
 }
 
+export type ChatAttachmentType = "image" | "file";
+
+export interface ChatAttachment {
+  url: string;
+  type: ChatAttachmentType;
+  name: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
   senderId: string;
   text: string | null;
+  attachment: ChatAttachment | null;
   deleted: boolean;
+  edited: boolean;
   createdAt: string;
 }
 

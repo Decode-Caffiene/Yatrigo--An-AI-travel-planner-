@@ -268,11 +268,11 @@ export default function ExplorePage() {
         </div>
       </section>
 
-      {/* AI Suggestions */}
+      {/* Suggestions */}
       <section className="col-span-4 mt-stack-md md:col-span-12">
         <div className="mb-stack-md flex items-center justify-between">
           <h2 className="font-headline-md text-headline-md text-on-surface">
-            AI Suggestions for You
+            Suggestions for You
           </h2>
         </div>
 

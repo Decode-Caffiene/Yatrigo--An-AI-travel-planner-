@@ -1,6 +1,7 @@
 import type {
   AISuggestion,
   AppNotification,
+  ChatAttachment,
   ChatMessage,
   ChatUser,
   Comment,
@@ -219,6 +220,37 @@ export const uploadImage = async (token: string, file: File): Promise<{ url: str
   return data;
 };
 
+export const uploadChatFile = async (
+  token: string,
+  file: File
+): Promise<{ url: string; name: string; mimeType: string; size: number }> => {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}/uploads/file`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    });
+  } catch {
+    throw new ApiError(
+      "Could not reach the server. Check your connection and try again.",
+      0
+    );
+  }
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new ApiError(data?.message || "File upload failed.", response.status);
+  }
+
+  return data;
+};
+
 export interface ListPostsFilters {
   type?: string;
   following?: boolean;
@@ -398,10 +430,26 @@ export const getMessages = (token: string, conversationId: string, before?: stri
     { token }
   );
 
-export const sendMessage = (token: string, conversationId: string, text: string) =>
+export const sendMessage = (
+  token: string,
+  conversationId: string,
+  text: string,
+  attachment?: ChatAttachment
+) =>
   request<{ message: ChatMessage }>(
     `/messages/conversations/${conversationId}/messages`,
-    { method: "POST", token, body: JSON.stringify({ text }) }
+    { method: "POST", token, body: JSON.stringify({ text, attachment }) }
+  );
+
+export const editMessage = (
+  token: string,
+  conversationId: string,
+  messageId: string,
+  text: string
+) =>
+  request<{ message: ChatMessage }>(
+    `/messages/conversations/${conversationId}/messages/${messageId}`,
+    { method: "PATCH", token, body: JSON.stringify({ text }) }
   );
 
 export const deleteMessage = (token: string, conversationId: string, messageId: string) =>

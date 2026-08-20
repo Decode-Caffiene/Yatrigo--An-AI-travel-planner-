@@ -8,6 +8,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -15,20 +16,44 @@ import { useAuth } from "@/lib/auth-context";
 import { useRequireAuth } from "@/lib/use-require-auth";
 import { useChat } from "@/lib/chat-context";
 import { Avatar } from "@/components/Avatar";
+import { AttachmentMenu } from "@/components/AttachmentMenu";
+import { EmojiPicker } from "@/components/EmojiPicker";
+import { MessageActionsMenu } from "@/components/MessageActionsMenu";
 import {
   ApiError,
   deleteMessage,
+  editMessage,
   getMessages,
   listConversations,
   markConversationRead,
   searchUsers,
   sendMessage,
   startConversation,
+  uploadChatFile,
+  uploadImage,
 } from "@/lib/api";
-import type { ChatMessage, ChatUser, Conversation } from "@/types";
+import type { ChatAttachmentType, ChatMessage, ChatUser, Conversation } from "@/types";
 
 const TYPING_STOP_DELAY_MS = 2000;
 const TYPING_AUTO_CLEAR_MS = 4000;
+
+const ATTACHMENT_PREVIEW_LABELS: Record<ChatAttachmentType, string> = {
+  image: "\u{1F4F7} Photo",
+  file: "\u{1F4CE} File",
+};
+
+function messagePreviewText(message: ChatMessage) {
+  return (
+    message.text ||
+    (message.attachment ? ATTACHMENT_PREVIEW_LABELS[message.attachment.type] : "")
+  );
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 function formatMessageTime(dateString: string) {
   return new Date(dateString).toLocaleTimeString(undefined, {
@@ -51,6 +76,7 @@ function MessagesContent() {
   const { token, user } = useAuth();
   const {
     subscribe,
+    subscribeToMessageEdits,
     subscribeToMessageDeletions,
     subscribeToReadReceipts,
     subscribeToTyping,
@@ -73,6 +99,8 @@ function MessagesContent() {
 
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -163,7 +191,7 @@ function MessagesContent() {
             ? {
                 ...c,
                 lastMessage: {
-                  text: message.text,
+                  text: messagePreviewText(message),
                   senderId: message.senderId,
                   createdAt: message.createdAt,
                 },
@@ -184,6 +212,19 @@ function MessagesContent() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, user, activeConversationId]);
+
+  useEffect(() => {
+    return subscribeToMessageEdits((edited) => {
+      if (edited.conversationId === activeConversationId) {
+        setMessages((current) => current.map((m) => (m.id === edited.id ? edited : m)));
+      }
+
+      // The conversation list preview may have shown this message's old
+      // text — simplest correct fix is to refetch it.
+      loadConversations();
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeConversationId, subscribeToMessageEdits]);
 
   useEffect(() => {
     return subscribeToMessageDeletions((event) => {
@@ -305,7 +346,69 @@ function MessagesContent() {
     typingStopTimeoutRef.current = setTimeout(stopTyping, TYPING_STOP_DELAY_MS);
   };
 
+  const appendSentMessage = (message: ChatMessage) => {
+    setMessages((current) =>
+      current.some((m) => m.id === message.id) ? current : [...current, message]
+    );
+    setConversations((current) => {
+      const updated = current.map((c) =>
+        c.id === message.conversationId
+          ? {
+              ...c,
+              lastMessage: {
+                text: messagePreviewText(message),
+                senderId: message.senderId,
+                createdAt: message.createdAt,
+              },
+              updatedAt: message.createdAt,
+            }
+          : c
+      );
+      return [...updated].sort(
+        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      );
+    });
+  };
+
+  const handleStartEdit = (message: ChatMessage) => {
+    setEditingMessage(message);
+    setDraft(message.text ?? "");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingMessage(null);
+    setDraft("");
+  };
+
+  const handleEditSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!token || !activeConversationId || !editingMessage || isSending) return;
+
+    const text = draft.trim();
+    if (!text && !editingMessage.attachment) return;
+
+    setIsSending(true);
+
+    try {
+      const res = await editMessage(token, activeConversationId, editingMessage.id, text);
+      setMessages((current) =>
+        current.map((m) => (m.id === res.message.id ? res.message : m))
+      );
+      loadConversations();
+      handleCancelEdit();
+    } catch (err) {
+      setMessagesError(err instanceof ApiError ? err.message : "Could not edit message.");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleSend = async (event: FormEvent) => {
+    if (editingMessage) {
+      await handleEditSubmit(event);
+      return;
+    }
+
     event.preventDefault();
     const text = draft.trim();
     if (!token || !activeConversationId || !text || isSending) return;
@@ -316,27 +419,7 @@ function MessagesContent() {
 
     try {
       const res = await sendMessage(token, activeConversationId, text);
-      setMessages((current) =>
-        current.some((m) => m.id === res.message.id) ? current : [...current, res.message]
-      );
-      setConversations((current) => {
-        const updated = current.map((c) =>
-          c.id === activeConversationId
-            ? {
-                ...c,
-                lastMessage: {
-                  text: res.message.text,
-                  senderId: res.message.senderId,
-                  createdAt: res.message.createdAt,
-                },
-                updatedAt: res.message.createdAt,
-              }
-            : c
-        );
-        return [...updated].sort(
-          (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-        );
-      });
+      appendSentMessage(res.message);
     } catch (err) {
       setMessagesError(err instanceof ApiError ? err.message : "Could not send message.");
       setDraft(text);
@@ -345,8 +428,43 @@ function MessagesContent() {
     }
   };
 
+  const handleEmojiSelect = (emoji: string) => {
+    handleDraftChange(draft + emoji);
+  };
+
+  const handleAttachmentSelected = async (file: File, kind: ChatAttachmentType) => {
+    if (!token || !activeConversationId || isUploadingAttachment) return;
+
+    setIsUploadingAttachment(true);
+    setMessagesError(null);
+    const caption = draft.trim();
+
+    try {
+      const { url } =
+        kind === "file" ? await uploadChatFile(token, file) : await uploadImage(token, file);
+
+      const res = await sendMessage(token, activeConversationId, caption, {
+        url,
+        type: kind,
+        name: file.name,
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+      });
+
+      appendSentMessage(res.message);
+      setDraft("");
+      stopTyping();
+    } catch (err) {
+      setMessagesError(err instanceof ApiError ? err.message : "Could not send attachment.");
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
   const handleDeleteMessage = async (messageId: string) => {
     if (!token || !activeConversationId) return;
+
+    if (editingMessage?.id === messageId) handleCancelEdit();
 
     setMessages((current) =>
       current.map((m) => (m.id === messageId ? { ...m, deleted: true, text: null } : m))
@@ -566,16 +684,10 @@ function MessagesContent() {
                       className={`group flex items-center gap-1.5 ${isMine ? "justify-end" : "justify-start"}`}
                     >
                       {isMine && !message.deleted && (
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteMessage(message.id)}
-                          title="Delete message"
-                          className="opacity-0 transition-opacity group-hover:opacity-100"
-                        >
-                          <span className="material-symbols-outlined text-base text-on-surface-variant hover:text-error">
-                            delete
-                          </span>
-                        </button>
+                        <MessageActionsMenu
+                          onEdit={() => handleStartEdit(message)}
+                          onDelete={() => handleDeleteMessage(message.id)}
+                        />
                       )}
                       <div
                         className={`max-w-[75%] rounded-2xl px-3.5 py-2 ${
@@ -584,15 +696,66 @@ function MessagesContent() {
                             : isMine
                               ? "rounded-br-sm bg-primary text-on-primary"
                               : "rounded-bl-sm bg-surface-container text-on-surface"
-                        }`}
+                        } ${editingMessage?.id === message.id ? "ring-2 ring-primary" : ""}`}
                       >
-                        <p
-                          className={`whitespace-pre-wrap wrap-break-word font-body-sm text-body-sm ${
-                            message.deleted ? "italic text-on-surface-variant" : ""
-                          }`}
-                        >
-                          {message.deleted ? "This message was deleted" : message.text}
-                        </p>
+                        {!message.deleted && message.attachment && (
+                          message.attachment.type === "file" ? (
+                            <a
+                              href={message.attachment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download={message.attachment.name}
+                              className={`mb-1 flex max-w-56 items-center gap-2 rounded-lg p-2 transition-colors ${
+                                isMine
+                                  ? "bg-on-primary/10 hover:bg-on-primary/20"
+                                  : "bg-surface-container-low hover:bg-surface-container"
+                              }`}
+                            >
+                              <span className="material-symbols-outlined shrink-0 text-2xl">
+                                description
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate font-body-sm text-body-sm">
+                                  {message.attachment.name}
+                                </span>
+                                <span
+                                  className={`block text-[10px] ${
+                                    isMine ? "text-on-primary/70" : "text-on-surface-variant"
+                                  }`}
+                                >
+                                  {formatFileSize(message.attachment.size)}
+                                </span>
+                              </span>
+                              <span className="material-symbols-outlined shrink-0 text-lg">
+                                download
+                              </span>
+                            </a>
+                          ) : (
+                            <a
+                              href={message.attachment.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative mb-1 block h-48 w-48 overflow-hidden rounded-lg"
+                            >
+                              <Image
+                                src={message.attachment.url}
+                                alt={message.attachment.name}
+                                fill
+                                className="object-cover"
+                              />
+                            </a>
+                          )
+                        )}
+
+                        {(message.deleted || message.text) && (
+                          <p
+                            className={`whitespace-pre-wrap wrap-break-word font-body-sm text-body-sm ${
+                              message.deleted ? "italic text-on-surface-variant" : ""
+                            }`}
+                          >
+                            {message.deleted ? "This message was deleted" : message.text}
+                          </p>
+                        )}
                         <p
                           className={`mt-0.5 text-right text-[10px] ${
                             !message.deleted && isMine
@@ -600,6 +763,7 @@ function MessagesContent() {
                               : "text-on-surface-variant"
                           }`}
                         >
+                          {!message.deleted && message.edited && "Edited · "}
                           {formatMessageTime(message.createdAt)}
                         </p>
                       </div>
@@ -620,23 +784,54 @@ function MessagesContent() {
               <p className="px-4 pb-1 font-body-sm text-body-sm text-error">{messagesError}</p>
             )}
 
+            {isUploadingAttachment && (
+              <p className="px-4 pb-1 font-body-sm text-body-sm text-on-surface-variant">
+                Uploading attachment...
+              </p>
+            )}
+
+            {editingMessage && (
+              <div className="flex items-center justify-between border-t border-surface-variant bg-surface-container-low px-4 py-1.5">
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  Editing message
+                </p>
+                <button
+                  type="button"
+                  onClick={handleCancelEdit}
+                  title="Cancel edit"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+            )}
+
             <form
               onSubmit={handleSend}
-              className="flex items-center gap-2 border-t border-surface-variant p-3"
+              className={`flex items-center gap-1 p-3 ${editingMessage ? "" : "border-t border-surface-variant"}`}
             >
+              <AttachmentMenu
+                onSelectFile={handleAttachmentSelected}
+                disabled={isUploadingAttachment || !!editingMessage}
+              />
+              <EmojiPicker onSelect={handleEmojiSelect} />
               <input
                 type="text"
                 value={draft}
                 onChange={(e) => handleDraftChange(e.target.value)}
-                placeholder="Type a message..."
+                placeholder={editingMessage ? "Edit message..." : "Type a message..."}
                 className="flex-1 rounded-full border border-surface-variant bg-surface-container-lowest px-4 py-2.5 font-body-sm text-body-sm text-on-surface placeholder:text-outline-variant focus:border-primary focus:outline-none"
               />
               <button
                 type="submit"
-                disabled={!draft.trim() || isSending}
+                disabled={
+                  (!draft.trim() && !(editingMessage && editingMessage.attachment)) || isSending
+                }
                 className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <span className="material-symbols-outlined text-xl">send</span>
+                <span className="material-symbols-outlined text-xl">
+                  {editingMessage ? "check" : "send"}
+                </span>
               </button>
             </form>
           </>

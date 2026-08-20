@@ -36,6 +36,7 @@ export interface TypingEvent {
 }
 
 type MessageListener = (message: ChatMessage) => void;
+type MessageEditedListener = (message: ChatMessage) => void;
 type MessageDeletedListener = (event: MessageDeletedEvent) => void;
 type ReadReceiptListener = (event: ReadReceiptEvent) => void;
 type TypingListener = (event: TypingEvent) => void;
@@ -45,6 +46,7 @@ interface ChatContextValue {
   unreadCount: number;
   refreshUnreadCount: () => void;
   subscribe: (listener: MessageListener) => () => void;
+  subscribeToMessageEdits: (listener: MessageEditedListener) => () => void;
   subscribeToMessageDeletions: (listener: MessageDeletedListener) => () => void;
   subscribeToReadReceipts: (listener: ReadReceiptListener) => () => void;
   subscribeToTyping: (listener: TypingListener) => () => void;
@@ -70,6 +72,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
   const listenersRef = useRef(new Set<MessageListener>());
+  const editListenersRef = useRef(new Set<MessageEditedListener>());
   const deletionListenersRef = useRef(new Set<MessageDeletedListener>());
   const readReceiptListenersRef = useRef(new Set<ReadReceiptListener>());
   const typingListenersRef = useRef(new Set<TypingListener>());
@@ -99,6 +102,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     socket.on("message:new", (message: ChatMessage) => {
       listenersRef.current.forEach((listener) => listener(message));
       refreshUnreadCount();
+    });
+
+    socket.on("message:edited", (message: ChatMessage) => {
+      editListenersRef.current.forEach((listener) => listener(message));
     });
 
     socket.on("message:deleted", (event: MessageDeletedEvent) => {
@@ -136,6 +143,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     return () => listenersRef.current.delete(listener);
   };
 
+  const subscribeToMessageEdits = (listener: MessageEditedListener) => {
+    editListenersRef.current.add(listener);
+    return () => editListenersRef.current.delete(listener);
+  };
+
   const subscribeToMessageDeletions = (listener: MessageDeletedListener) => {
     deletionListenersRef.current.add(listener);
     return () => deletionListenersRef.current.delete(listener);
@@ -169,6 +181,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         unreadCount,
         refreshUnreadCount,
         subscribe,
+        subscribeToMessageEdits,
         subscribeToMessageDeletions,
         subscribeToReadReceipts,
         subscribeToTyping,

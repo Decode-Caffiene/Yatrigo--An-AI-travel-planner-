@@ -34,10 +34,22 @@ export const sendMessage = asyncHandler(async (req, res) => {
   const message = await messageService.sendMessage(
     req.user._id,
     req.params.id,
-    req.body.text
+    req.body.text,
+    req.body.attachment
   );
 
   res.status(201).json({ success: true, message });
+});
+
+export const editMessage = asyncHandler(async (req, res) => {
+  const message = await messageService.editMessage(
+    req.user._id,
+    req.params.id,
+    req.params.messageId,
+    req.body.text
+  );
+
+  res.status(200).json({ success: true, message });
 });
 
 export const deleteMessage = asyncHandler(async (req, res) => {
