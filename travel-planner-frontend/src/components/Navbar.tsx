@@ -25,6 +25,7 @@ export function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
 
   const [destination, setDestination] = useState("");
@@ -48,6 +49,17 @@ export function Navbar() {
 
     return () => clearTimeout(timeoutId);
   }, [token, destination]);
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [mobileMenuOpen]);
 
   const suggestions = useMemo(() => {
     const local = searchDestinations(destination);
@@ -98,6 +110,18 @@ export function Navbar() {
     >
       <div className="flex h-16 w-full items-center justify-between px-container-padding-mobile md:px-container-padding-desktop">
         <div className="flex items-center gap-stack-md">
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen((open) => !open)}
+            aria-label={mobileMenuOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileMenuOpen}
+            className="flex h-9 w-9 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low md:hidden"
+          >
+            <span className="material-symbols-outlined">
+              {mobileMenuOpen ? "close" : "menu"}
+            </span>
+          </button>
+
           <Link href="/explore" className="flex items-center">
             <Image
               src="/yatrigo-wordmark.png"
@@ -227,6 +251,78 @@ export function Navbar() {
           )}
         </div>
       </div>
+
+      {mobileMenuOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-10 md:hidden"
+            onClick={() => setMobileMenuOpen(false)}
+          />
+          <div className="absolute inset-x-0 top-full z-20 border-b border-surface-variant bg-surface p-4 shadow-lg md:hidden">
+            <div className="relative mb-stack-md">
+              <div className="flex items-center rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 transition-all focus-within:border-primary focus-within:ring-2 focus-within:ring-primary-fixed-dim">
+                <span className="material-symbols-outlined mr-2 text-xl text-outline">
+                  search
+                </span>
+                <input
+                  type="text"
+                  placeholder="Search destinations..."
+                  autoComplete="off"
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setIsSearchFocused(false)}
+                  onKeyDown={(e) => {
+                    handleSearchKeyDown(e);
+                    if (e.key === "Enter") setMobileMenuOpen(false);
+                  }}
+                  className="w-full border-none bg-transparent text-body-sm font-body-sm text-on-surface placeholder:text-outline-variant outline-none focus:ring-0"
+                />
+              </div>
+
+              {isSearchFocused && suggestions.length > 0 && (
+                <ul className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-surface-variant bg-surface-container-lowest shadow-lg">
+                  {suggestions.map((place) => (
+                    <li key={place.label}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          goToDestination(place.label);
+                          setMobileMenuOpen(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-3.5 py-2.5 text-left font-body-sm text-body-sm text-on-surface transition-colors hover:bg-primary/10"
+                      >
+                        <span className="material-symbols-outlined text-lg text-on-surface-variant">
+                          location_on
+                        </span>
+                        {place.label}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-1">
+              {NAV_LINKS.map(({ label, href }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMobileMenuOpen(false)}
+                  className={`rounded-md px-3 py-2.5 font-button text-button transition-colors ${
+                    pathname === href
+                      ? "bg-primary/10 text-primary"
+                      : "text-on-surface-variant hover:bg-surface-container-low hover:text-primary"
+                  }`}
+                >
+                  {label}
+                </Link>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
     </nav>
   );
 }

@@ -35,9 +35,15 @@ export const resolveLandmark = (destination) =>
 const resolveLandmarkUncached = async (destination) => {
   try {
     const completion = await groq.chat.completions.create({
-      model: AI_CONFIG.model,
+      model: AI_CONFIG.lightModel,
       temperature: 0.3,
-      max_tokens: 30,
+      // Reasoning models spend part of the output budget on hidden reasoning
+      // before writing the visible answer (same issue already fixed in
+      // event.service.js/hotel.service.js) — the old max_tokens: 30 left no
+      // room for that, so this silently returned an empty string on every
+      // call, which the fallback below turned into a no-op (destination
+      // echoed back unchanged) instead of a real landmark name.
+      max_completion_tokens: 300,
       messages: [
         {
           role: "system",

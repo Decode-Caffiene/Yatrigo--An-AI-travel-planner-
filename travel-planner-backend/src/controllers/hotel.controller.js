@@ -18,6 +18,7 @@ export const search = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    hotels: result,
+    source: result.source,
+    hotels: result.hotels,
   });
 });

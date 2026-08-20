@@ -10,7 +10,7 @@ import AppError from "../utils/AppError.js";
 export const translateText = async (text, targetLanguage) => {
   try {
     const completion = await groq.chat.completions.create({
-      model: AI_CONFIG.model,
+      model: AI_CONFIG.lightModel,
       temperature: 0.2,
       messages: [
         {

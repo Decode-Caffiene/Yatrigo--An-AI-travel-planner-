@@ -365,7 +365,11 @@ function MessagesContent() {
   return (
     <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-5xl overflow-hidden rounded-xl border border-surface-variant bg-surface-container-lowest card-shadow">
       {/* Conversation list */}
-      <aside className="flex w-full max-w-xs shrink-0 flex-col border-r border-surface-variant">
+      <aside
+        className={`w-full shrink-0 flex-col border-r border-surface-variant md:flex md:max-w-xs ${
+          activeConversationId ? "hidden" : "flex"
+        }`}
+      >
         <div className="flex items-center justify-between border-b border-surface-variant p-4">
           <h1 className="font-headline-md text-headline-md text-on-surface">Messages</h1>
           <button
@@ -489,7 +493,9 @@ function MessagesContent() {
       </aside>
 
       {/* Active thread */}
-      <section className="flex flex-1 flex-col">
+      <section
+        className={`flex-1 flex-col md:flex ${activeConversationId ? "flex" : "hidden"}`}
+      >
         {!activeConversationId && (
           <div className="flex flex-1 flex-col items-center justify-center gap-2 text-center">
             <span className="material-symbols-outlined text-4xl text-outline-variant">
@@ -504,6 +510,14 @@ function MessagesContent() {
         {activeConversationId && (
           <>
             <div className="flex items-center gap-2.5 border-b border-surface-variant p-4">
+              <Link
+                href="/messages"
+                title="Back to conversations"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low md:hidden"
+              >
+                <span className="material-symbols-outlined">arrow_back</span>
+              </Link>
+
               {activeConversation?.otherUser ? (
                 <Link
                   href={`/community/u/${activeConversation.otherUser.id}`}

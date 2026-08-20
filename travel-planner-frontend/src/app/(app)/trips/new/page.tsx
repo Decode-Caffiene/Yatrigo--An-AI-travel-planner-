@@ -84,6 +84,7 @@ function NewTripForm() {
   const [hotelMode, setHotelMode] = useState<"search" | "manual" | null>(null);
   const [hotelForm, setHotelForm] = useState(emptyHotelForm);
   const [hotelResults, setHotelResults] = useState<HotelSearchResult[]>([]);
+  const [hotelResultsSource, setHotelResultsSource] = useState<"live" | "ai" | null>(null);
   const [isSearchingHotels, setIsSearchingHotels] = useState(false);
   const [hasSearchedHotels, setHasSearchedHotels] = useState(false);
   const [hotelSearchError, setHotelSearchError] = useState<string | null>(null);
@@ -178,6 +179,7 @@ function NewTripForm() {
         Number(travelers) || 1
       );
       setHotelResults(result.hotels);
+      setHotelResultsSource(result.source);
     } catch (err) {
       setHotelSearchError(
         err instanceof ApiError ? err.message : "Could not search hotels."
@@ -212,7 +214,7 @@ function NewTripForm() {
   const selectHotelResult = (hotel: HotelSearchResult) => {
     setHotelForm({
       name: hotel.hotelName,
-      address: "",
+      address: hotel.area || "",
       checkIn: hotel.checkInDate,
       checkOut: hotel.checkOutDate,
       price: hotel.price != null ? String(hotel.price) : "",
@@ -541,6 +543,15 @@ function NewTripForm() {
                   Searching live availability...
                 </p>
               )}
+              {!isSearchingHotels && hotelResultsSource === "ai" && (
+                <p className="mb-2 flex items-start gap-1.5 rounded-lg bg-surface-container p-2.5 font-body-sm text-body-sm text-on-surface-variant">
+                  <span className="material-symbols-outlined text-lg text-primary">
+                    auto_awesome
+                  </span>
+                  Live pricing is temporarily unavailable, so these are
+                  AI-suggested places to stay — verify details before booking.
+                </p>
+              )}
               {!isSearchingHotels && hotelSearchError && (
                 <div className="space-y-2">
                   <p className="font-body-sm text-body-sm text-error">
@@ -575,7 +586,7 @@ function NewTripForm() {
                         isSelected ? "border-primary bg-primary/5" : "border-surface-variant"
                       }`}
                     >
-                      {hotel.photoUrl && (
+                      {hotel.photoUrl ? (
                         <Image
                           src={hotel.photoUrl}
                           alt={hotel.hotelName}
@@ -583,18 +594,50 @@ function NewTripForm() {
                           height={56}
                           className="h-14 w-14 shrink-0 rounded-lg object-cover"
                         />
+                      ) : (
+                        hotel.reason && (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-tertiary/15">
+                            <span className="material-symbols-outlined text-2xl text-primary">
+                              hotel
+                            </span>
+                          </div>
+                        )
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-body-sm font-semibold text-body-sm text-on-surface">
                           {hotel.hotelName}
+                          {hotel.stars && hotel.stars > 0 ? (
+                            <span
+                              className="ml-1 text-primary"
+                              aria-label={`${hotel.stars} star hotel`}
+                            >
+                              {"★".repeat(Math.min(5, Math.round(hotel.stars)))}
+                            </span>
+                          ) : null}
                         </p>
-                        <p className="font-body-sm text-body-sm text-on-surface-variant">
-                          {hotel.rating != null ? `${hotel.rating}/10` : "No rating"}
-                          {hotel.reviewCount != null ? ` (${hotel.reviewCount})` : ""} ·{" "}
-                          {hotel.price != null
-                            ? `${hotel.currency} ${hotel.price}`
-                            : "Price unavailable"}
-                        </p>
+                        {hotel.reason ? (
+                          <p className="truncate font-body-sm text-body-sm text-on-surface-variant">
+                            {[
+                              hotel.rating != null
+                                ? `${hotel.ratingIsEstimate ? "~" : ""}${hotel.rating}/10`
+                                : null,
+                              hotel.area,
+                              hotel.priceTier,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            {" — "}
+                            {hotel.reason}
+                          </p>
+                        ) : (
+                          <p className="font-body-sm text-body-sm text-on-surface-variant">
+                            {hotel.rating != null ? `${hotel.rating}/10` : "No rating"}
+                            {hotel.reviewCount != null ? ` (${hotel.reviewCount})` : ""} ·{" "}
+                            {hotel.price != null
+                              ? `${hotel.currency} ${hotel.price}`
+                              : "Price unavailable"}
+                          </p>
+                        )}
                       </div>
                       <button
                         type="button"
@@ -643,7 +686,7 @@ function NewTripForm() {
                     className={inputClass}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Check-in</label>
                     <input
@@ -667,7 +710,7 @@ function NewTripForm() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Price</label>
                     <input

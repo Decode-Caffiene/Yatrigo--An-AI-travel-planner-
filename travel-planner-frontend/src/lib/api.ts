@@ -9,7 +9,8 @@ import type {
   EventDetails,
   GenerateItineraryResult,
   AirportSuggestion,
-  HotelSearchResult,
+  HotelSearchResponse,
+  RestaurantSearchResponse,
   NewPostInput,
   NewTripInput,
   Post,
@@ -161,8 +162,14 @@ export const searchHotels = (
   checkOutDate: string,
   adults: number
 ) =>
-  request<{ hotels: HotelSearchResult[] }>(
+  request<HotelSearchResponse>(
     `/hotels/search?destination=${encodeURIComponent(destination)}&checkInDate=${checkInDate}&checkOutDate=${checkOutDate}&adults=${adults}`,
+    { token }
+  );
+
+export const searchRestaurants = (token: string, destination: string) =>
+  request<RestaurantSearchResponse>(
+    `/restaurants/search?destination=${encodeURIComponent(destination)}`,
     { token }
   );
 

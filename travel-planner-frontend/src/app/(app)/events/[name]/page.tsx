@@ -21,6 +21,30 @@ function formatEventDate(dateString: string | null) {
   });
 }
 
+function formatEventDateRange(dateString: string | null, endDateString: string | null) {
+  if (!dateString) return null;
+  if (!endDateString || endDateString === dateString) return formatEventDate(dateString);
+
+  const start = new Date(dateString);
+  const end = new Date(endDateString);
+  const sameYear = start.getFullYear() === end.getFullYear();
+
+  const startLabel = start.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: sameYear ? undefined : "numeric",
+  });
+  const endLabel = end.toLocaleDateString(undefined, {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  });
+
+  return `${startLabel} - ${endLabel}`;
+}
+
 function EventDetailContent({ params }: { params: Promise<{ name: string }> }) {
   const { name } = use(params);
   const eventName = decodeURIComponent(name);
@@ -29,6 +53,7 @@ function EventDetailContent({ params }: { params: Promise<{ name: string }> }) {
   const venue = searchParams.get("venue") || null;
   const country = searchParams.get("country") || null;
   const date = searchParams.get("date") || null;
+  const endDate = searchParams.get("endDate") || null;
   const time = searchParams.get("time") || null;
   const category = searchParams.get("category") || null;
 
@@ -62,7 +87,7 @@ function EventDetailContent({ params }: { params: Promise<{ name: string }> }) {
   if (!isReady) return null;
 
   const place = [venue, country].filter(Boolean).join(", ");
-  const formattedDate = formatEventDate(date);
+  const formattedDate = formatEventDateRange(date, endDate);
 
   return (
     <div ref={scope} className="mx-auto max-w-3xl">

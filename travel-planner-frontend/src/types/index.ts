@@ -73,6 +73,46 @@ export interface HotelSearchResult {
   checkInDate: string;
   checkOutDate: string;
   photoUrl: string | null;
+  // Only present when the search fell back to AI suggestions (see
+  // HotelSearchResponse.source) — no live inventory/pricing backs these.
+  area?: string | null;
+  priceTier?: string | null;
+  reason?: string | null;
+  // true when `rating` is the model's estimate rather than a real
+  // aggregated guest score (photoUrl, when present, is always a verified
+  // Wikipedia/Commons image either way — never fabricated).
+  ratingIsEstimate?: boolean;
+}
+
+export interface RestaurantSearchResult {
+  name: string;
+  address: string | null;
+  categories: string[];
+  // Neighborhood/area — only ever set when source is "ai" (a real Foursquare
+  // result has `address` instead).
+  area?: string | null;
+  rating: number | null;
+  // Foursquare's free tier has no real rating/price data, so this is always
+  // true when `rating` is present — an AI estimate, on a 1-5 scale.
+  ratingIsEstimate?: boolean;
+  priceTier: string | null;
+  reason: string | null;
+}
+
+export interface RestaurantSearchResponse {
+  restaurants: RestaurantSearchResult[];
+  // "live" = real Foursquare venues (name/address/categories), rating/price
+  // AI-estimated. "ai" = Foursquare itself was unavailable, so the venues
+  // are AI-suggested too.
+  source: "live" | "ai";
+}
+
+export interface HotelSearchResponse {
+  hotels: HotelSearchResult[];
+  // "live" = real Booking.com inventory/pricing. "ai" = the external hotel
+  // API's quota was exhausted/rate-limited, so these are AI-suggested places
+  // to stay instead — no real price/rating/photo, shown differently in the UI.
+  source: "live" | "ai";
 }
 
 export interface Trip {
@@ -199,6 +239,7 @@ export interface TopTraveler {
 export interface TravelEvent {
   name: string;
   date: string | null;
+  endDate: string | null;
   time: string | null;
   venue: string | null;
   country: string | null;

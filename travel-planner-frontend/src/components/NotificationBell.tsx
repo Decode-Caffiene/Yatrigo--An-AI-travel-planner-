@@ -117,7 +117,7 @@ export function NotificationBell() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 z-20 mt-2 w-80 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-lg">
+        <div className="absolute right-0 z-20 mt-2 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-lg">
           <div className="border-b border-surface-variant px-4 py-3">
             <p className="font-headline-sm text-headline-sm text-on-surface">Notifications</p>
           </div>

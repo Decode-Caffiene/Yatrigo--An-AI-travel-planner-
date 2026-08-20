@@ -15,6 +15,7 @@ import {
   getTrip,
   regenerateItinerary,
   searchHotels,
+  searchRestaurants,
   shareItineraryToCommunity,
   updateTrip,
 } from "@/lib/api";
@@ -22,6 +23,7 @@ import { AirlineLogo } from "@/components/AirlineLogo";
 import { FlightFields } from "@/components/FlightFields";
 import type {
   HotelSearchResult,
+  RestaurantSearchResult,
   Trip,
   TripFlight,
   TripHotel,
@@ -139,8 +141,18 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const [isSavingHotel, setIsSavingHotel] = useState(false);
   const [hotelError, setHotelError] = useState<string | null>(null);
   const [hotelResults, setHotelResults] = useState<HotelSearchResult[]>([]);
+  const [hotelResultsSource, setHotelResultsSource] = useState<"live" | "ai" | null>(null);
   const [isSearchingHotels, setIsSearchingHotels] = useState(false);
   const [hotelSearchError, setHotelSearchError] = useState<string | null>(null);
+
+  // Restaurants
+  const [restaurantResults, setRestaurantResults] = useState<RestaurantSearchResult[]>([]);
+  const [restaurantResultsSource, setRestaurantResultsSource] = useState<"live" | "ai" | null>(
+    null
+  );
+  const [isSearchingRestaurants, setIsSearchingRestaurants] = useState(false);
+  const [hasSearchedRestaurants, setHasSearchedRestaurants] = useState(false);
+  const [restaurantSearchError, setRestaurantSearchError] = useState<string | null>(null);
 
   // Flights (an array so round-trip/multi-city itineraries can hold more
   // than one leg)
@@ -391,6 +403,7 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const handleSelectSearchResult = (result: HotelSearchResult) =>
     saveHotel({
       name: result.hotelName,
+      address: result.area ?? undefined,
       checkIn: result.checkInDate,
       checkOut: result.checkOutDate,
       price: result.price ?? undefined,
@@ -415,12 +428,34 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
         trip.travelers
       );
       setHotelResults(result.hotels);
+      setHotelResultsSource(result.source);
     } catch (err) {
       setHotelSearchError(
         err instanceof ApiError ? err.message : "Could not search hotels."
       );
     } finally {
       setIsSearchingHotels(false);
+    }
+  };
+
+  const handleSearchRestaurants = async () => {
+    if (!token || !trip) return;
+
+    setRestaurantSearchError(null);
+    setIsSearchingRestaurants(true);
+    setRestaurantResults([]);
+
+    try {
+      const result = await searchRestaurants(token, trip.destination);
+      setRestaurantResults(result.restaurants);
+      setRestaurantResultsSource(result.source);
+    } catch (err) {
+      setRestaurantSearchError(
+        err instanceof ApiError ? err.message : "Could not search restaurants."
+      );
+    } finally {
+      setHasSearchedRestaurants(true);
+      setIsSearchingRestaurants(false);
     }
   };
 
@@ -556,7 +591,7 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     className={inputClass}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Start date</label>
                     <input
@@ -580,7 +615,7 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Budget (USD)</label>
                     <input
@@ -794,6 +829,15 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     Searching real hotel availability for {trip.destination}...
                   </p>
                 )}
+                {!isSearchingHotels && hotelResultsSource === "ai" && (
+                  <p className="flex items-start gap-1.5 rounded-lg bg-surface-container p-2.5 font-body-sm text-body-sm text-on-surface-variant">
+                    <span className="material-symbols-outlined text-lg text-primary">
+                      auto_awesome
+                    </span>
+                    Live pricing is temporarily unavailable, so these are
+                    AI-suggested places to stay — verify details before booking.
+                  </p>
+                )}
                 {hotelSearchError && (
                   <p className="font-body-sm text-body-sm text-error">
                     {hotelSearchError}
@@ -810,7 +854,7 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                       key={index}
                       className="flex items-center gap-3 rounded-lg border border-surface-variant p-3"
                     >
-                      {hotel.photoUrl && (
+                      {hotel.photoUrl ? (
                         <Image
                           src={hotel.photoUrl}
                           alt={hotel.hotelName}
@@ -818,18 +862,50 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                           height={56}
                           className="h-14 w-14 shrink-0 rounded-lg object-cover"
                         />
+                      ) : (
+                        hotel.reason && (
+                          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-tertiary/15">
+                            <span className="material-symbols-outlined text-2xl text-primary">
+                              hotel
+                            </span>
+                          </div>
+                        )
                       )}
                       <div className="min-w-0 flex-1">
                         <p className="truncate font-body-sm font-semibold text-body-sm text-on-surface">
                           {hotel.hotelName}
+                          {hotel.stars && hotel.stars > 0 ? (
+                            <span
+                              className="ml-1 text-primary"
+                              aria-label={`${hotel.stars} star hotel`}
+                            >
+                              {"★".repeat(Math.min(5, Math.round(hotel.stars)))}
+                            </span>
+                          ) : null}
                         </p>
-                        <p className="font-body-sm text-body-sm text-on-surface-variant">
-                          {hotel.rating != null ? `${hotel.rating}/10` : "No rating"}
-                          {hotel.reviewCount != null ? ` (${hotel.reviewCount})` : ""} ·{" "}
-                          {hotel.price != null
-                            ? `${hotel.currency} ${hotel.price}`
-                            : "Price unavailable"}
-                        </p>
+                        {hotel.reason ? (
+                          <p className="truncate font-body-sm text-body-sm text-on-surface-variant">
+                            {[
+                              hotel.rating != null
+                                ? `${hotel.ratingIsEstimate ? "~" : ""}${hotel.rating}/10`
+                                : null,
+                              hotel.area,
+                              hotel.priceTier,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                            {" — "}
+                            {hotel.reason}
+                          </p>
+                        ) : (
+                          <p className="font-body-sm text-body-sm text-on-surface-variant">
+                            {hotel.rating != null ? `${hotel.rating}/10` : "No rating"}
+                            {hotel.reviewCount != null ? ` (${hotel.reviewCount})` : ""} ·{" "}
+                            {hotel.price != null
+                              ? `${hotel.currency} ${hotel.price}`
+                              : "Price unavailable"}
+                          </p>
+                        )}
                       </div>
                       <button
                         onClick={() => handleSelectSearchResult(hotel)}
@@ -868,7 +944,7 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     className={inputClass}
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Check-in</label>
                     <input
@@ -892,7 +968,7 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <label className={labelClass}>Price</label>
                     <input
@@ -936,6 +1012,110 @@ function TripDetailContent({ params }: { params: Promise<{ id: string }> }) {
                   {isSavingHotel ? "Saving..." : "Save hotel"}
                 </button>
               </div>
+            )}
+          </div>
+
+          {/* Restaurants */}
+          <div
+            data-animate
+            className="card-shadow rounded-xl border border-surface-variant bg-surface-container-lowest p-6"
+          >
+            <div className="mb-stack-md flex items-center justify-between">
+              <h2 className="flex items-center gap-2 font-headline-md text-headline-md text-on-surface">
+                <span className="material-symbols-outlined text-primary">
+                  restaurant
+                </span>
+                Restaurants
+              </h2>
+              <button
+                type="button"
+                onClick={handleSearchRestaurants}
+                disabled={isSearchingRestaurants}
+                className="rounded-lg border border-surface-variant px-3 py-1.5 font-button text-button text-on-surface transition-colors hover:bg-surface-container disabled:opacity-50"
+              >
+                {hasSearchedRestaurants ? "Refresh" : "Find top restaurants"}
+              </button>
+            </div>
+
+            {isSearchingRestaurants && (
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                Finding top restaurants in {trip.destination}...
+              </p>
+            )}
+
+            {!isSearchingRestaurants && restaurantResultsSource === "ai" && (
+              <p className="mb-3 flex items-start gap-1.5 rounded-lg bg-surface-container p-2.5 font-body-sm text-body-sm text-on-surface-variant">
+                <span className="material-symbols-outlined text-lg text-primary">
+                  auto_awesome
+                </span>
+                Live restaurant data is temporarily unavailable, so these are
+                AI-suggested spots — verify details before visiting.
+              </p>
+            )}
+
+            {restaurantSearchError && (
+              <p className="font-body-sm text-body-sm text-error">
+                {restaurantSearchError}
+              </p>
+            )}
+
+            {!isSearchingRestaurants &&
+              hasSearchedRestaurants &&
+              restaurantResults.length === 0 &&
+              !restaurantSearchError && (
+                <p className="font-body-sm text-body-sm text-on-surface-variant">
+                  No restaurants found.
+                </p>
+              )}
+
+            {!hasSearchedRestaurants && !isSearchingRestaurants && (
+              <p className="font-body-sm text-body-sm text-on-surface-variant">
+                Discover the top-rated restaurants in {trip.destination}.
+              </p>
+            )}
+
+            {restaurantResults.length > 0 && (
+              <ul className="max-h-96 space-y-2 overflow-y-auto">
+                {restaurantResults.map((restaurant, index) => (
+                  <li
+                    key={index}
+                    className="flex items-center gap-3 rounded-lg border border-surface-variant p-3"
+                  >
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-primary/15 to-tertiary/15">
+                      <span className="material-symbols-outlined text-2xl text-primary">
+                        restaurant
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="truncate font-body-sm font-semibold text-body-sm text-on-surface">
+                          {restaurant.name}
+                        </p>
+                        {restaurant.rating != null && (
+                          <span className="shrink-0 font-body-sm text-body-sm text-on-surface-variant">
+                            {restaurant.ratingIsEstimate ? "~" : ""}
+                            {restaurant.rating}/5
+                            {restaurant.priceTier ? ` · ${restaurant.priceTier}` : ""}
+                          </span>
+                        )}
+                      </div>
+                      <p className="truncate font-body-sm text-body-sm text-on-surface-variant">
+                        {[
+                          restaurant.categories.join(", "),
+                          restaurant.address || restaurant.area,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                      {restaurant.reason && (
+                        <p className="truncate font-body-sm text-body-sm text-on-surface-variant">
+                          {restaurant.reason}
+                        </p>
+                      )}
+                    </div>
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
 

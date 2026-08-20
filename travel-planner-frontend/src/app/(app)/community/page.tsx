@@ -29,6 +29,22 @@ const FILTERS: { key: string; label: string }[] = [
 
 const EVENTS_PAGE_SIZE = 3;
 
+function formatEventDateRange(date: string, endDate: string | null) {
+  const start = new Date(date).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+
+  if (!endDate || endDate === date) return start;
+
+  const end = new Date(endDate).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+  });
+
+  return `${start} - ${end}`;
+}
+
 export default function CommunityPage() {
   const { isReady } = useRequireAuth();
   const { token, user } = useAuth();
@@ -339,6 +355,7 @@ export default function CommunityPage() {
                     if (event.venue) eventParams.set("venue", event.venue);
                     if (event.country) eventParams.set("country", event.country);
                     if (event.date) eventParams.set("date", event.date);
+                    if (event.endDate) eventParams.set("endDate", event.endDate);
                     if (event.time) eventParams.set("time", event.time);
                     if (event.category) eventParams.set("category", event.category);
 
@@ -367,6 +384,11 @@ export default function CommunityPage() {
                             <p className="font-body-sm text-body-sm text-on-surface-variant">
                               {place || "Location TBD"}
                             </p>
+                            {event.date && event.endDate && event.endDate !== event.date && (
+                              <p className="font-body-sm text-[11px] text-on-surface-variant">
+                                {formatEventDateRange(event.date, event.endDate)}
+                              </p>
+                            )}
                           </div>
                         </Link>
                       </li>
