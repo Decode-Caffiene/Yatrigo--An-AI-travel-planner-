@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import AppError from "../utils/AppError.js";
-import groq from "../utils/groq.js";
+import { createChatCompletion, wasFallbackAlreadyAttempted } from "../utils/aiClient.js";
 import { AI_CONFIG } from "../config/ai.js";
 import { getWikipediaArticleImage } from "../utils/wikipedia.js";
 import { cached } from "../utils/cache.js";
@@ -43,7 +43,7 @@ const sortByRatingDesc = (hotels) =>
   });
 
 const requestAIHotelSuggestions = async (destination) => {
-  const completion = await groq.chat.completions.create({
+  const completion = await createChatCompletion({
     model: AI_CONFIG.model,
     temperature: 0.4,
     // Reasoning models spend part of the output budget on hidden reasoning
@@ -106,10 +106,14 @@ const generateAIHotelSuggestions = async (destination, checkInDate, checkOutDate
   // Reasoning models occasionally emit malformed/unterminated JSON for a
   // longer list regardless of token budget — one retry clears up the vast
   // majority (same pattern as event.service.js's global events generator).
+  // But if that failure already spent a full OpenRouter fallback timeout,
+  // retrying would just spend a second one for little extra chance of
+  // success — skip the retry in that case and fail fast instead.
   let parsed;
   try {
     parsed = await requestAIHotelSuggestions(destination);
-  } catch {
+  } catch (error) {
+    if (wasFallbackAlreadyAttempted(error)) throw error;
     parsed = await requestAIHotelSuggestions(destination);
   }
 
@@ -269,12 +273,14 @@ const searchHotelsUncached = async (destination, checkInDate, checkOutDate, adul
       const hotels = await generateAIHotelSuggestions(destination, checkInDate, checkOutDate);
       return { source: "ai", hotels };
     } catch (fallbackError) {
+      // Both the live API and the AI fallback are down — re-throwing the
+      // original (live-API-specific) error here would hide that the AI
+      // fallback was even attempted, which reads as broken/confusing when
+      // it's really just two unrelated quotas colliding at once.
       console.error("AI hotel fallback failed:", fallbackError.message);
 
-      if (error instanceof AppError) throw error;
-
       throw new AppError(
-        "Hotel search is rate-limited right now. Please wait a moment and try again, or enter your hotel details manually.",
+        "Hotel search and AI suggestions are both temporarily unavailable right now. Please enter your hotel details manually, or try again shortly.",
         429
       );
     }

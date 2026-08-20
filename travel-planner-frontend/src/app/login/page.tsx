@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ApiError, resendVerification } from "@/lib/api";
 import { BackgroundCarousel } from "@/components/BackgroundCarousel";
 import { GoogleSignInButton } from "@/components/GoogleSignInButton";
+import { LoginSuccessTransition } from "@/components/LoginSuccessTransition";
 import { usePageEntrance } from "@/lib/usePageEntrance";
 import { isValidGmailAddress, GMAIL_ERROR_MESSAGE } from "@/lib/validators";
 
@@ -24,6 +25,7 @@ export default function LoginPage() {
   const [needsVerification, setNeedsVerification] = useState(false);
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -40,7 +42,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push("/explore");
+      setIsTransitioning(true);
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -184,7 +186,7 @@ export default function LoginPage() {
             </div>
 
             <GoogleSignInButton
-              onSuccess={() => router.push("/explore")}
+              onSuccess={() => setIsTransitioning(true)}
               onError={(message) => setError(message)}
             />
 
@@ -197,6 +199,10 @@ export default function LoginPage() {
           </form>
         </div>
       </div>
+
+      {isTransitioning && (
+        <LoginSuccessTransition onComplete={() => router.push("/explore")} />
+      )}
     </div>
   );
 }

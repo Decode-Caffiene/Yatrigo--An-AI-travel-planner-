@@ -1,7 +1,7 @@
 import axios from "axios";
 
 import AppError from "../utils/AppError.js";
-import groq from "../utils/groq.js";
+import { createChatCompletion, wasFallbackAlreadyAttempted } from "../utils/aiClient.js";
 import { AI_CONFIG } from "../config/ai.js";
 import { cached } from "../utils/cache.js";
 
@@ -56,7 +56,7 @@ const requestFoursquareRestaurants = async (destination) => {
  * flagged as such for the UI.
  */
 const enrichWithAIRatings = async (destination, restaurants) => {
-  const completion = await groq.chat.completions.create({
+  const completion = await createChatCompletion({
     model: AI_CONFIG.lightModel,
     temperature: 0.3,
     max_completion_tokens: 3000,
@@ -103,7 +103,7 @@ const enrichWithAIRatings = async (destination, restaurants) => {
 };
 
 const requestAIRestaurantSuggestions = async (destination) => {
-  const completion = await groq.chat.completions.create({
+  const completion = await createChatCompletion({
     model: AI_CONFIG.model,
     temperature: 0.4,
     max_completion_tokens: 3500,
@@ -193,7 +193,8 @@ const searchRestaurantsUncached = async (destination) => {
       let parsed;
       try {
         parsed = await requestAIRestaurantSuggestions(destination);
-      } catch {
+      } catch (retryError) {
+        if (wasFallbackAlreadyAttempted(retryError)) throw retryError;
         parsed = await requestAIRestaurantSuggestions(destination);
       }
 

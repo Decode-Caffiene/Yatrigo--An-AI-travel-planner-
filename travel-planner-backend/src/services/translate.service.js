@@ -1,4 +1,4 @@
-import groq from "../utils/groq.js";
+import { createChatCompletion } from "../utils/aiClient.js";
 import { AI_CONFIG } from "../config/ai.js";
 import AppError from "../utils/AppError.js";
 
@@ -9,7 +9,7 @@ import AppError from "../utils/AppError.js";
  */
 export const translateText = async (text, targetLanguage) => {
   try {
-    const completion = await groq.chat.completions.create({
+    const completion = await createChatCompletion({
       model: AI_CONFIG.lightModel,
       temperature: 0.2,
       messages: [

@@ -1,4 +1,4 @@
-import groq from "../utils/groq.js";
+import { createChatCompletion } from "../utils/aiClient.js";
 import { AI_CONFIG } from "../config/ai.js";
 import { getWikipediaArticleImage, getWikipediaImage } from "../utils/wikipedia.js";
 import { cached } from "../utils/cache.js";
@@ -34,7 +34,7 @@ export const resolveLandmark = (destination) =>
 
 const resolveLandmarkUncached = async (destination) => {
   try {
-    const completion = await groq.chat.completions.create({
+    const completion = await createChatCompletion({
       model: AI_CONFIG.lightModel,
       temperature: 0.3,
       // Reasoning models spend part of the output budget on hidden reasoning
@@ -103,7 +103,7 @@ export const generateDestinationGuide = (destination) =>
 
 const generateDestinationGuideUncached = async (destination) => {
   try {
-    const completion = await groq.chat.completions.create({
+    const completion = await createChatCompletion({
       model: AI_CONFIG.model,
       temperature: 0.6,
       messages: [
@@ -165,7 +165,7 @@ const generateDestinationGuideUncached = async (destination) => {
  */
 export const generateQuizRecommendations = async (answers) => {
   try {
-    const completion = await groq.chat.completions.create({
+    const completion = await createChatCompletion({
       model: AI_CONFIG.model,
       temperature: 0.7,
       messages: [
@@ -231,7 +231,7 @@ export const generateAISuggestions = async ({ visitedOrPlanned = [], interests =
       : "This traveler has no trip history yet — suggest broadly popular, exciting destinations for a general travel app homepage.";
 
   try {
-    const completion = await groq.chat.completions.create({
+    const completion = await createChatCompletion({
       model: AI_CONFIG.model,
       temperature: 0.8,
       messages: [

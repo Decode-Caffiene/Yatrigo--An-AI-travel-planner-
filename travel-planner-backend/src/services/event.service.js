@@ -1,4 +1,4 @@
-import groq from "../utils/groq.js";
+import { createChatCompletion, wasFallbackAlreadyAttempted } from "../utils/aiClient.js";
 import { AI_CONFIG } from "../config/ai.js";
 import AppError from "../utils/AppError.js";
 import { cached } from "../utils/cache.js";
@@ -34,7 +34,7 @@ export const generateAIEvents = async (destination) => {
   const today = new Date().toISOString().slice(0, 10);
 
   try {
-    const completion = await groq.chat.completions.create({
+    const completion = await createChatCompletion({
       model: AI_CONFIG.model,
       temperature: 0.3,
       // Reasoning models (e.g. gpt-oss) spend part of the output budget on
@@ -101,7 +101,7 @@ export const generateAIEvents = async (destination) => {
 // JSON for a 15-item response regardless of token budget — a single retry
 // clears up the vast majority of these without the user ever seeing it.
 const requestGlobalEventsJSON = async (today) => {
-  const completion = await groq.chat.completions.create({
+  const completion = await createChatCompletion({
     model: AI_CONFIG.model,
     temperature: 0.5,
     // Reasoning models spend part of the output budget on hidden reasoning
@@ -162,7 +162,11 @@ const generateGlobalUpcomingEventsUncached = async () => {
     let parsed;
     try {
       parsed = await requestGlobalEventsJSON(today);
-    } catch {
+    } catch (retryError) {
+      // A failure that already spent a full OpenRouter fallback timeout
+      // isn't worth retrying — that just spends a second one for little
+      // extra chance of success.
+      if (wasFallbackAlreadyAttempted(retryError)) throw retryError;
       parsed = await requestGlobalEventsJSON(today);
     }
 
